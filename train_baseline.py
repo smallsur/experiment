@@ -183,10 +183,13 @@ if __name__ == '__main__':
     parser.add_argument('--refine_epoch_rl', type=int, default=28)
     parser.add_argument('--xe_base_lr', type=float, default=0.0001)
     parser.add_argument('--rl_base_lr', type=float, default=5e-6)
+    
 
+    parser.add_argument('--gpu_id', type=int, default=0)
 
     args = parser.parse_args()
 
+    torch.cuda.set_device(args.gpu_id)
     
 #*******************************************************************************
     if args.web:
