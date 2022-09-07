@@ -42,12 +42,14 @@ def del_cache():
         for dir in dirs:
             if dir=="__pycache__":
                 path_cache.append(os.path.join(root,dir))
+                
     
     for dir in path_cache:
         for file in os.listdir(dir):
             os.remove(os.path.join(dir,file))
 
-    
+
+ 
 
 # if __name__ == '__main__':
 #     del_cache()

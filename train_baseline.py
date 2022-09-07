@@ -1,9 +1,11 @@
+from time import time
 import torch
 import torch.nn as nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import LambdaLR
 from torch.nn import NLLLoss
 from tqdm import tqdm
+from datetime import datetime
 from torch.utils.tensorboard import SummaryWriter
 import argparse
 import os
@@ -19,6 +21,7 @@ import warnings
 from models.spatial_exp import Encoder,Decoder,Transformer
 from data import ImageDetectionsField, TextField, RawField
 from data import COCO, DataLoader
+from utils import Logger 
 
 random.seed(1234)
 torch.manual_seed(1234)
@@ -173,6 +176,8 @@ if __name__ == '__main__':
     parser.add_argument('--annotation_folder', type=str, default='Datasets/m2_annotations/')
     parser.add_argument('--dir_to_save_model', type=str, default='saved_transformer_models/')
     parser.add_argument('--logs_folder', type=str, default='transformer_tensorboard_logs')
+    parser.add_argument('--path_txtlog',type=str,default='log')
+
     parser.add_argument('--path_prefix',type=str,default='/media/awen/D/dataset/rstnet')
     parser.add_argument('--path_prefix_web',type=str,default='/media/a1002-2/ccc739a0-163b-4b54-b335-f12f0d52de59/zhangawen/dataset/rstnet')
     parser.add_argument('--path_vocab',type=str,default='vocab.pkl')
@@ -183,6 +188,9 @@ if __name__ == '__main__':
     parser.add_argument('--refine_epoch_rl', type=int, default=28)
     parser.add_argument('--xe_base_lr', type=float, default=0.0001)
     parser.add_argument('--rl_base_lr', type=float, default=5e-6)
+
+    parser.add_argument('--id',type=str, default='default')
+
     
 
     parser.add_argument('--gpu_id', type=int, default=0)
@@ -195,7 +203,7 @@ if __name__ == '__main__':
     if args.web:
         args.path_prefix = args.path_prefix_web
 
-    path_=['features_path','annotation_folder','dir_to_save_model','logs_folder','path_vocab']
+    path_=['features_path','annotation_folder','dir_to_save_model','logs_folder','path_vocab','path_txtlog']
 
     for p in path_:
         setattr(args,p,os.path.join(args.path_prefix,getattr(args,p)))
@@ -205,6 +213,10 @@ if __name__ == '__main__':
     print('The Training of Experiment')
 
     writer = SummaryWriter(log_dir=os.path.join(args.logs_folder, args.exp_name))
+
+    log = Logger(args.id+"_"+ str(datetime.today().date()),args.path_txtlog)
+    log.write_log("args seting:\n"+str(args)+"\n")
+    log.write_log("****************************init******************************\n")
 
     # Pipeline for image regions
     image_field = ImageDetectionsField(detections_path=args.features_path, max_detections=49, load_in_tmp=False)
@@ -329,18 +341,33 @@ if __name__ == '__main__':
         dict_dataloader_val = DataLoader(dict_dataset_val, batch_size=args.batch_size // 5)
         dict_dataloader_test = DataLoader(dict_dataset_test, batch_size=args.batch_size // 5)
 
+        log.write_log('epoch%d:\n'%e)
+
+
+
         if not use_rl:
             train_loss = train_xe(model, dataloader_train, optim, text_field)
             writer.add_scalar('data/train_loss', train_loss, e)
+            log.write_log('state = %s \n'%'base_train')
+            log.write_log(' train_loss = %f \n'%train_loss)
+            
         else:
             train_loss, reward, reward_baseline = train_scst(model, dict_dataloader_train, optim_rl, cider_train, text_field)
             writer.add_scalar('data/train_loss', train_loss, e)
             writer.add_scalar('data/reward', reward, e)
             writer.add_scalar('data/reward_baseline', reward_baseline, e)
+            log.write_log('state = %s \n'%'rl_train')
+            log.write_log(' train_loss = %f \n'%train_loss)
+            log.write_log(' reword = %f \n'%reward)
+            log.write_log(' reward_baseline = %f \n'%reward_baseline)
 
+        
         # Validation loss
         val_loss = evaluate_loss(model, dataloader_val, loss_fn, text_field)
         writer.add_scalar('data/val_loss', val_loss, e)
+
+        log.write_log(' val_loss = %f \n'%val_loss)
+        log.write_log("\n")
 
         # Validation scores
         scores = evaluate_metrics(model, dict_dataloader_val, text_field)
@@ -352,6 +379,9 @@ if __name__ == '__main__':
         writer.add_scalar('data/val_meteor', scores['METEOR'], e)
         writer.add_scalar('data/val_rouge', scores['ROUGE'], e)
 
+        log.write_log('val_evaluation scores = %s'%str(scores))
+        log.write_log("\n")
+
         # Test scores
         scores = evaluate_metrics(model, dict_dataloader_test, text_field)
         print("Test scores", scores)
@@ -362,6 +392,11 @@ if __name__ == '__main__':
         writer.add_scalar('data/test_meteor', scores['METEOR'], e)
         writer.add_scalar('data/test_rouge', scores['ROUGE'], e)
 
+        log.write_log('test_evaluation scores = %s'%str(scores))
+        log.write_log("\n")
+
+        log.write_log("************************epoch %d end**************************\n"%e)
+        log.write_log("**************************************************************\n")
         # Prepare for next epoch
         best = False
         if val_cider >= best_cider:

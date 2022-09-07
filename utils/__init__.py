@@ -1,5 +1,6 @@
 from .utils import *
 from .typing import *
+from .logger import Logger
 
 def get_batch_size(x: TensorOrSequence) -> int:
     if isinstance(x, torch.Tensor):
