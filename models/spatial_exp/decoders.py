@@ -75,3 +75,4 @@ class Decoder(Module):
 
         out = self.fc(out)
         return F.log_softmax(out, dim=-1)
+

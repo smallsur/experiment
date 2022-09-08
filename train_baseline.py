@@ -18,10 +18,11 @@ from shutil import copyfile
 import warnings
 
 
-from models.spatial_exp import Encoder,Decoder,Transformer
 from data import ImageDetectionsField, TextField, RawField
 from data import COCO, DataLoader
-from utils import Logger 
+from utils import Logger
+import models.spatial_exp
+from models.build import BuildModel
 
 random.seed(1234)
 torch.manual_seed(1234)
@@ -181,7 +182,6 @@ if __name__ == '__main__':
     parser.add_argument('--path_prefix',type=str,default='/media/awen/D/dataset/rstnet')
     parser.add_argument('--path_prefix_web',type=str,default='/media/a1002-2/ccc739a0-163b-4b54-b335-f12f0d52de59/zhangawen/dataset/rstnet')
     parser.add_argument('--path_vocab',type=str,default='vocab.pkl')
-    parser.add_argument('--web',type=bool,default=False)
     
     parser.add_argument('--xe_least', type=int, default=15)
     parser.add_argument('--xe_most', type=int, default=20)
@@ -189,10 +189,10 @@ if __name__ == '__main__':
     parser.add_argument('--xe_base_lr', type=float, default=0.0001)
     parser.add_argument('--rl_base_lr', type=float, default=5e-6)
 
+    #参数调整
     parser.add_argument('--id',type=str, default='default')
-
-    
-
+    parser.add_argument('--model',type=str, default=1)
+    parser.add_argument('--web',type=bool,default=False)
     parser.add_argument('--gpu_id', type=int, default=0)
 
     args = parser.parse_args()
@@ -236,9 +236,9 @@ if __name__ == '__main__':
         text_field.vocab = pickle.load(open(args.path_vocab, 'rb'))
 
     # Model and dataloaders   层数，padding_idx
-    encoder = Encoder(3, 0)
-    decoder = Decoder(len(text_field.vocab), 54, 3, text_field.vocab.stoi['<pad>'])
-    model = Transformer(text_field.vocab.stoi['<bos>'], encoder, decoder).to(device)
+    # encoder = Encoder(3, 0)
+    # decoder = Decoder(len(text_field.vocab), 54, 3, text_field.vocab.stoi['<pad>'])
+    model = BuildModel.build(args.model).to(device)
 
     # if len(device_ids) > 1:
     #     model = nn.DataParallel(model)
@@ -345,29 +345,29 @@ if __name__ == '__main__':
 
 
 
-        if not use_rl:
-            train_loss = train_xe(model, dataloader_train, optim, text_field)
-            writer.add_scalar('data/train_loss', train_loss, e)
-            log.write_log('state = %s \n'%'base_train')
-            log.write_log(' train_loss = %f \n'%train_loss)
+        # if not use_rl:
+        #     train_loss = train_xe(model, dataloader_train, optim, text_field)
+        #     writer.add_scalar('data/train_loss', train_loss, e)
+        #     log.write_log('state = %s \n'%'base_train')
+        #     log.write_log(' train_loss = %f \n'%train_loss)
             
-        else:
-            train_loss, reward, reward_baseline = train_scst(model, dict_dataloader_train, optim_rl, cider_train, text_field)
-            writer.add_scalar('data/train_loss', train_loss, e)
-            writer.add_scalar('data/reward', reward, e)
-            writer.add_scalar('data/reward_baseline', reward_baseline, e)
-            log.write_log('state = %s \n'%'rl_train')
-            log.write_log(' train_loss = %f \n'%train_loss)
-            log.write_log(' reword = %f \n'%reward)
-            log.write_log(' reward_baseline = %f \n'%reward_baseline)
+        # else:
+        #     train_loss, reward, reward_baseline = train_scst(model, dict_dataloader_train, optim_rl, cider_train, text_field)
+        #     writer.add_scalar('data/train_loss', train_loss, e)
+        #     writer.add_scalar('data/reward', reward, e)
+        #     writer.add_scalar('data/reward_baseline', reward_baseline, e)
+        #     log.write_log('state = %s \n'%'rl_train')
+        #     log.write_log(' train_loss = %f \n'%train_loss)
+        #     log.write_log(' reword = %f \n'%reward)
+        #     log.write_log(' reward_baseline = %f \n'%reward_baseline)
 
         
-        # Validation loss
-        val_loss = evaluate_loss(model, dataloader_val, loss_fn, text_field)
-        writer.add_scalar('data/val_loss', val_loss, e)
+        # # Validation loss
+        # val_loss = evaluate_loss(model, dataloader_val, loss_fn, text_field)
+        # writer.add_scalar('data/val_loss', val_loss, e)
 
-        log.write_log(' val_loss = %f \n'%val_loss)
-        log.write_log("\n")
+        # log.write_log(' val_loss = %f \n'%val_loss)
+        # log.write_log("\n")
 
         # Validation scores
         scores = evaluate_metrics(model, dict_dataloader_val, text_field)
