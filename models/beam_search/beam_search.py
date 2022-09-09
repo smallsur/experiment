@@ -17,9 +17,9 @@ class BeamSearch(object):
         self.selected_words = None
         self.all_log_probs = None
 
-    def _expand_state(self, selected_beam, cur_beam_size):#编码器输出，以及所有解码器的状态
+    def _expand_state(self, selected_beam, cur_beam_size):
         def fn(s):
-            shape = [int(sh) for sh in s.shape]
+            shape = [int(sh) for sh in s.shape] # 10 8 22 512 
             beam = selected_beam
             for _ in shape[1:]:
                 beam = beam.unsqueeze(-1)
@@ -31,12 +31,12 @@ class BeamSearch(object):
         return fn
 
     def _expand_visual(self, visual: utils.TensorOrSequence, cur_beam_size: int, selected_beam: torch.Tensor):
-        if isinstance(visual, torch.Tensor):
-            visual_shape = visual.shape
-            visual_exp_shape = (self.b_s, cur_beam_size) + visual_shape[1:]
-            visual_red_shape = (self.b_s * self.beam_size,) + visual_shape[1:]
-            selected_beam_red_size = (self.b_s, self.beam_size) + tuple(1 for _ in range(len(visual_exp_shape) - 2))
-            selected_beam_exp_size = (self.b_s, self.beam_size) + visual_exp_shape[2:]
+        if isinstance(visual, torch.Tensor):#10 49 2048
+            visual_shape = visual.shape #10 49 2048
+            visual_exp_shape = (self.b_s, cur_beam_size) + visual_shape[1:]#10 1 49 2048 或者 10 5 49 2048
+            visual_red_shape = (self.b_s * self.beam_size,) + visual_shape[1:]#10 49 2048 或者 50 49 2048
+            selected_beam_red_size = (self.b_s, self.beam_size) + tuple(1 for _ in range(len(visual_exp_shape) - 2))#10 1 1 1 或 10 5 1 1 
+            selected_beam_exp_size = (self.b_s, self.beam_size) + visual_exp_shape[2:] #10 1 49 2048 or 10 5 49 2048
             visual_exp = visual.view(visual_exp_shape)
             selected_beam_exp = selected_beam.view(selected_beam_red_size).expand(selected_beam_exp_size)
             visual = torch.gather(visual_exp, 1, selected_beam_exp).view(visual_red_shape)

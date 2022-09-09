@@ -191,13 +191,15 @@ if __name__ == '__main__':
 
     #参数调整
     parser.add_argument('--id',type=str, default='default')
-    parser.add_argument('--model',type=str, default=1)
+    parser.add_argument('--model',type=int, default=2)
     parser.add_argument('--web',type=bool,default=False)
     parser.add_argument('--gpu_id', type=int, default=0)
 
     args = parser.parse_args()
 
     torch.cuda.set_device(args.gpu_id)
+    print("现在正在使用的GPU编号:",end="")
+    print(torch.cuda.current_device())
     
 #*******************************************************************************
     if args.web:

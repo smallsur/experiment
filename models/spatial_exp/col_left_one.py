@@ -31,7 +31,7 @@ class MultiLevelEncoder_Col(nn.Module):
     def forward(self, input, attention_weights=None):
         # input (b_s, seq_len, d_in)
         attention_mask = (torch.sum(input, -1) == self.padding_idx).unsqueeze(1).unsqueeze(1)  # (b_s, 1, 1, seq_len)
-
+        
         outs = []
         out = input
         for l in self.layers:
