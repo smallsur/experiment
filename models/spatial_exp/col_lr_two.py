@@ -115,44 +115,52 @@ class Transformer_rl(CaptioningModel):
     def forward(self, images, input):
         # enc_output, mask_enc = self.encoder(images)
         # dec_output = self.decoder(seq, enc_output, mask_enc)
-        # enc_output = F.relu(self.fc(images))
-        # enc_output = self.dropout_en(enc_output)
-        # enc_output = self.layer_norm_en(enc_output)
+        enc_output = F.relu(self.fc_en(images))
+        enc_output = self.dropout_en(enc_output)
+        enc_output = self.layer_norm_en(enc_output)
 
-        # attention_mask = (torch.sum(images, -1) == self.padding_idx_en).unsqueeze(1).unsqueeze(1)
+        attention_mask = (torch.sum(images, -1) == self.padding_idx_en).unsqueeze(1).unsqueeze(1)
 
-        enc_output,attention_mask = self.encoder_step(images)
+        # enc_output,attention_mask = self.encoder_step(images)
 
-        # b_s, seq_len = input.shape[:2]
-        # mask_queries = (input != self.padding_idx_de).unsqueeze(-1).float()  # (b_s, seq_len, 1)
-        # mask_self_attention = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.uint8, device=input.device),
-        #                                  diagonal=1)
-        # mask_self_attention = mask_self_attention.unsqueeze(0).unsqueeze(0)  # (1, 1, seq_len, seq_len)
-        # mask_self_attention = mask_self_attention + (input == self.padding_idx_de).unsqueeze(1).unsqueeze(1).byte()
-        # mask_self_attention = mask_self_attention.gt(0)  # (b_s, 1, seq_len, seq_len)
+        b_s, seq_len = input.shape[:2]
+        mask_queries = (input != self.padding_idx_de).unsqueeze(-1).float()  # (b_s, seq_len, 1)
+        mask_self_attention = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.uint8, device=input.device),
+                                         diagonal=1)
+        mask_self_attention = mask_self_attention.unsqueeze(0).unsqueeze(0)  # (1, 1, seq_len, seq_len)
+        mask_self_attention = mask_self_attention + (input == self.padding_idx_de).unsqueeze(1).unsqueeze(1).byte()
+        mask_self_attention = mask_self_attention.gt(0)  # (b_s, 1, seq_len, seq_len)
 
-        # if self._is_stateful:
-        #     self.running_mask_self_attention = torch.cat([self.running_mask_self_attention.type_as(mask_self_attention), mask_self_attention], -1)
-        #     mask_self_attention = self.running_mask_self_attention
+        if self._is_stateful:
+            self.running_mask_self_attention = torch.cat([self.running_mask_self_attention.type_as(mask_self_attention), mask_self_attention], -1)
+            mask_self_attention = self.running_mask_self_attention
 
-        # seq = torch.arange(1, seq_len + 1).view(1, -1).expand(b_s, -1).to(input.device)  # (b_s, seq_len)
-        # seq = seq.masked_fill(mask_queries.squeeze(-1) == 0, 0)
+        seq = torch.arange(1, seq_len + 1).view(1, -1).expand(b_s, -1).to(input.device)  # (b_s, seq_len)
+        seq = seq.masked_fill(mask_queries.squeeze(-1) == 0, 0)
 
-        # if self._is_stateful:
-        #     self.running_seq.add_(1)
-        #     seq = self.running_seq
+        if self._is_stateful:
+            self.running_seq.add_(1)
+            seq = self.running_seq
             
-        # dec_output = self.word_emb(input) + self.pos_emb(seq)
+        dec_output = self.word_emb(input) + self.pos_emb(seq)
 
-        dec_output,mask_queries,mask_self_attention = self.decoder_step(input)
+        # dec_output,mask_queries,mask_self_attention = self.decoder_step(input)
+        enc_output = self.layers_en[0](enc_output,enc_output,enc_output,attention_mask)
+        enc_output = self.layers_en[1](enc_output,enc_output,enc_output,attention_mask)
+        dec_output = self.layers_de[0](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+        enc_output = self.mid_layers[0](enc_output,dec_output)
+        enc_output = self.layers_en[2](enc_output,enc_output,enc_output,attention_mask)
+        dec_output = self.layers_de[1](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+        enc_output = self.mid_layers[1](enc_output,dec_output)
+        dec_output = self.layers_de[1](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
 
-        for i in range(self.N-1):
-            enc_output = self.layers_en[i](enc_output,enc_output,enc_output,attention_mask)
-            dec_output = self.layers_de[i](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
-            enc_output = self.mid_layers[i](enc_output,dec_output)
+        # for i in range(self.N-1):
+        #     enc_output = self.layers_en[i](enc_output,enc_output,enc_output,attention_mask)
+        #     dec_output = self.layers_de[i](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+        #     enc_output = self.mid_layers[i](enc_output,dec_output)
 
-        enc_output = self.layers_en[self.N-1](enc_output,enc_output,enc_output,attention_mask)
-        dec_output = self.layers_de[self.N-1](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+        # enc_output = self.layers_en[self.N-1](enc_output,enc_output,enc_output,attention_mask)
+        # dec_output = self.layers_de[self.N-1](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
 
         out = self.fc_de(dec_output)
 
@@ -183,16 +191,68 @@ class Transformer_rl(CaptioningModel):
             
         else:
             it = prev_output
+        
 
-        enc_output,attention_mask = self.encoder_step(visual)
-        dec_output,mask_queries,mask_self_attention = self.decoder_step(it)
-        for i in range(self.N-1):
-            enc_output = self.layers_en[i](enc_output,enc_output,enc_output,attention_mask)
-            dec_output = self.layers_de[i](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
-            enc_output = self.mid_layers[i](enc_output,dec_output)
+        # enc_output,attention_mask = self.encoder_step(visual)
+        # dec_output,mask_queries,mask_self_attention = self.decoder_step(it)
+        # for i in range(self.N-1):
+        #     enc_output = self.layers_en[i](enc_output,enc_output,enc_output,attention_mask)
+        #     dec_output = self.layers_de[i](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+        #     enc_output = self.mid_layers[i](enc_output,dec_output)
 
-        enc_output = self.layers_en[self.N-1](enc_output,enc_output,enc_output,attention_mask)
-        dec_output = self.layers_de[self.N-1](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+        # enc_output = self.layers_en[self.N-1](enc_output,enc_output,enc_output,attention_mask)
+        # dec_output = self.layers_de[self.N-1](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+        # out = self.fc_de(dec_output)
+        # enc_output, mask_enc = self.encoder(visual)
+        # dec_output = self.decoder(seq, enc_output, mask_enc)
+        enc_output = F.relu(self.fc_en(visual))
+        enc_output = self.dropout_en(enc_output)
+        enc_output = self.layer_norm_en(enc_output)
+
+        attention_mask = (torch.sum(visual, -1) == self.padding_idx_en).unsqueeze(1).unsqueeze(1)
+
+        # enc_output,attention_mask = self.encoder_step(images)
+        input = it
+        b_s, seq_len = input.shape[:2]
+        mask_queries = (input != self.padding_idx_de).unsqueeze(-1).float()  # (b_s, seq_len, 1)
+        mask_self_attention = torch.triu(torch.ones((seq_len, seq_len), dtype=torch.uint8, device=input.device),
+                                         diagonal=1)
+        mask_self_attention = mask_self_attention.unsqueeze(0).unsqueeze(0)  # (1, 1, seq_len, seq_len)
+        mask_self_attention = mask_self_attention + (input == self.padding_idx_de).unsqueeze(1).unsqueeze(1).byte()
+        mask_self_attention = mask_self_attention.gt(0)  # (b_s, 1, seq_len, seq_len)
+
+        if self._is_stateful:
+            self.running_mask_self_attention = torch.cat([self.running_mask_self_attention.type_as(mask_self_attention), mask_self_attention], -1)
+            mask_self_attention = self.running_mask_self_attention
+
+        seq = torch.arange(1, seq_len + 1).view(1, -1).expand(b_s, -1).to(input.device)  # (b_s, seq_len)
+        seq = seq.masked_fill(mask_queries.squeeze(-1) == 0, 0)
+
+        if self._is_stateful:
+            self.running_seq.add_(1)
+            seq = self.running_seq
+            
+        dec_output = self.word_emb(input) + self.pos_emb(seq)
+
+        # dec_output,mask_queries,mask_self_attention = self.decoder_step(input)
+
+        # for i in range(self.N-1):
+        #     enc_output = self.layers_en[i](enc_output,enc_output,enc_output,attention_mask)
+        #     dec_output = self.layers_de[i](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+        #     enc_output = self.mid_layers[i](enc_output,dec_output)
+
+        # enc_output = self.layers_en[self.N-1](enc_output,enc_output,enc_output,attention_mask)
+        # dec_output = self.layers_de[self.N-1](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+
+        enc_output = self.layers_en[0](enc_output,enc_output,enc_output,attention_mask)
+        enc_output = self.layers_en[1](enc_output,enc_output,enc_output,attention_mask)
+        dec_output = self.layers_de[0](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+        enc_output = self.mid_layers[0](enc_output,dec_output)
+        enc_output = self.layers_en[2](enc_output,enc_output,enc_output,attention_mask)
+        dec_output = self.layers_de[1](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
+        enc_output = self.mid_layers[1](enc_output,dec_output)
+        dec_output = self.layers_de[1](dec_output,enc_output,mask_queries,mask_self_attention,attention_mask)
         out = self.fc_de(dec_output)
 
         return F.softmax(out,-1)
+
