@@ -14,7 +14,7 @@ from torch.nn import functional as F
 
 from models.captioning_model import CaptioningModel
 
-def build_rl_two():
+def build_rl_two(args):
     return Transformer_rl()
 
 BuildModel.add(2,build_rl_two)

@@ -7,6 +7,7 @@ from torch.nn import NLLLoss
 from tqdm import tqdm
 from datetime import datetime
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader
 import argparse
 import os
 import pickle
@@ -17,10 +18,11 @@ import random
 from shutil import copyfile
 import warnings
 
+from data_exp import Build_DataSet
+from data_exp import TextField
 
-from data import ImageDetectionsField, TextField, RawField
-from data import COCO, DataLoader
 from utils import Logger
+
 import models.spatial_exp
 from models.build import BuildModel
 
@@ -45,13 +47,14 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
     running_loss = .0
     with tqdm(desc='Epoch %d - validation' % e, unit='it', total=len(dataloader)) as pbar:
         with torch.no_grad():
-            for it, (detections, captions) in enumerate(dataloader):
+            for it, (detections,targets, captions) in enumerate(dataloader):
                 detections, captions = detections.to(device), captions.to(device)
-                out = model(detections, captions)
-                captions = captions[:, 1:].contiguous()
-                out = out[:, :-1].contiguous()
-                loss = loss_fn(out.view(-1, len(text_field.vocab)), captions.view(-1))
-                this_loss = loss.item()
+                targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+                box_out,cap_out = model(detections, captions)
+                captions_gt = captions[:, 1:].contiguous()
+                cap_out = cap_out[:, :-1].contiguous()
+                loss_cap = loss_fn(cap_out.view(-1, len(text_field.vocab)), captions_gt.view(-1))
+                this_loss = loss_cap.item()
                 running_loss += this_loss
 
                 pbar.set_postfix(loss=running_loss / (it + 1))
@@ -67,12 +70,12 @@ def evaluate_metrics(model, dataloader, text_field):
     gen = {}
     gts = {}
     with tqdm(desc='Epoch %d - evaluation' % e, unit='it', total=len(dataloader)) as pbar:
-        for it, (images, caps_gt) in enumerate(iter(dataloader)):
+        for it, (images, targets, captions) in enumerate(iter(dataloader)):#(images, caps_gt)
             images = images.to(device)
             with torch.no_grad():
                 out, _ = model.beam_search(images, 20, text_field.vocab.stoi['<eos>'], 5, out_size=1)
             caps_gen = text_field.decode(out, join_words=False)
-            for i, (gts_i, gen_i) in enumerate(zip(caps_gt, caps_gen)):
+            for i, (gts_i, gen_i) in enumerate(zip(captions, caps_gen)):
                 gen_i = ' '.join([k for k, g in itertools.groupby(gen_i)])
                 gen['%d_%d' % (it, i)] = [gen_i, ]
                 gts['%d_%d' % (it, i)] = gts_i
@@ -91,17 +94,27 @@ def train_xe(model, dataloader, optim, text_field):
     print('lr = ', optim.state_dict()['param_groups'][0]['lr'])
     
     running_loss = .0
-    with tqdm(desc='Epoch %d - train' % e, unit='it', total=len(dataloader)) as pbar:
-        for it, (detections, captions) in enumerate(dataloader):
-            detections, captions = detections.to(device), captions.to(device) #batch len dim ,batch*
-            out = model(detections, captions)
-            optim.zero_grad()
+    with tqdm(desc='Epoch %d - train' % e, unit='it', total=len(dataloader)) as pbar:#x1,y1,x2,y12
+        for it, (detections,targets, captions) in enumerate(dataloader):
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            detections,  captions = detections.to(device), captions.to(device) #batch len dim ,batch*
+            box_out,cap_out = model(detections, captions)
+
             captions_gt = captions[:, 1:].contiguous()
-            out = out[:, :-1].contiguous()
-            loss = loss_fn(out.view(-1, len(text_field.vocab)), captions_gt.view(-1))
+            cap_out = cap_out[:, :-1].contiguous()
+            loss_cap = loss_fn(cap_out.view(-1, len(text_field.vocab)), captions_gt.view(-1))
+
+            loss_box = model.forward_box_loss(box_out,targets)
+            
+            loss = args.norm_r * loss_box + (1-args.norm_r) *loss_cap
+
+            optim.zero_grad()
             loss.backward()
 
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
+
             optim.step()
+
             this_loss = loss.item()
             running_loss += this_loss
 
@@ -129,7 +142,7 @@ def train_scst(model, dataloader, optim, cider, text_field):
     beam_size = 5
 
     with tqdm(desc='Epoch %d - train' % e, unit='it', total=len(dataloader)) as pbar:
-        for it, (detections, caps_gt) in enumerate(dataloader):
+        for it, (detections,targets, caps_gt) in enumerate(dataloader):
             detections = detections.to(device)
             outs, log_probs = model.beam_search(detections, seq_len, text_field.vocab.stoi['<eos>'],
                                                 beam_size, out_size=beam_size)
@@ -170,6 +183,7 @@ if __name__ == '__main__':
     parser.add_argument('--m', type=int, default=40)
     parser.add_argument('--head', type=int, default=8)
     parser.add_argument('--warmup', type=int, default=10000)
+    parser.add_argument('--position_embedding', type=str, default='sine',help='sine or learned')
     parser.add_argument('--resume_last', action='store_true')
     parser.add_argument('--resume_best', action='store_true')
 
@@ -178,6 +192,7 @@ if __name__ == '__main__':
     parser.add_argument('--dir_to_save_model', type=str, default='saved_transformer_models/')
     parser.add_argument('--logs_folder', type=str, default='transformer_tensorboard_logs')
     parser.add_argument('--path_txtlog',type=str,default='log')
+    parser.add_argument('--dect_path', type=str, default='')
 
     parser.add_argument('--path_prefix',type=str,default='/media/awen/D/dataset/rstnet')
     parser.add_argument('--path_prefix_web',type=str,default='/media/a1002-2/ccc739a0-163b-4b54-b335-f12f0d52de59/zhangawen/dataset/rstnet')
@@ -188,16 +203,18 @@ if __name__ == '__main__':
     parser.add_argument('--refine_epoch_rl', type=int, default=28)
     parser.add_argument('--xe_base_lr', type=float, default=0.0001)
     parser.add_argument('--rl_base_lr', type=float, default=5e-6)
+    parser.add_argument('--norm_r', type=float, default=0.5)
 
     #参数调整
     parser.add_argument('--id',type=str, default='default')
-    parser.add_argument('--model',type=int, default=2)
+    parser.add_argument('--model',type=int, default=3)
     parser.add_argument('--web',type=bool,default=False)
     parser.add_argument('--gpu_id', type=int, default=0)
 
     args = parser.parse_args()
 
     torch.cuda.set_device(args.gpu_id)
+    
     print("现在正在使用的GPU编号:",end="")
     print(torch.cuda.current_device())
     
@@ -205,7 +222,7 @@ if __name__ == '__main__':
     if args.web:
         args.path_prefix = args.path_prefix_web
 
-    path_=['features_path','annotation_folder','dir_to_save_model','logs_folder','path_vocab','path_txtlog']
+    path_=['features_path','annotation_folder','dir_to_save_model','logs_folder','path_vocab','path_txtlog','dect_path']
 
     for p in path_:
         setattr(args,p,os.path.join(args.path_prefix,getattr(args,p)))
@@ -216,40 +233,27 @@ if __name__ == '__main__':
 
     writer = SummaryWriter(log_dir=os.path.join(args.logs_folder, args.exp_name))
 
+
+    #init textlog
     log = Logger(args.id+"_"+ str(datetime.today().date()),args.path_txtlog)
     log.write_log("args seting:\n"+str(args)+"\n")
     log.write_log("****************************init******************************\n")
 
-    # Pipeline for image regions
-    image_field = ImageDetectionsField(detections_path=args.features_path, max_detections=49, load_in_tmp=False)
-    # Pipeline for text
     text_field = TextField(init_token='<bos>', eos_token='<eos>', lower=True, tokenize='spacy', remove_punctuation=True, nopoints=False)
 
-    # Create the dataset
-    dataset = COCO(image_field, text_field, 'coco/images/', args.annotation_folder, args.annotation_folder)
-    train_dataset, val_dataset, test_dataset = dataset.splits
+    # init vocab
+    print('Loading from vocabulary')
+    text_field.vocab = pickle.load(open(args.path_vocab, 'rb'))
 
-    if not os.path.isfile(args.path_vocab):
-        print("Building vocabulary")
-        text_field.build_vocab(train_dataset, val_dataset, min_freq=5)
-        pickle.dump(text_field.vocab, open(args.path_vocab, 'wb'))
-    else:
-        print('Loading from vocabulary')
-        text_field.vocab = pickle.load(open(args.path_vocab, 'rb'))
+    #build dataset,dataloader
+    datasets, datasets_evalue= Build_DataSet(args=args,text_field=text_field)
 
-    # Model and dataloaders   层数，padding_idx
-    # encoder = Encoder(3, 0)
-    # decoder = Decoder(len(text_field.vocab), 54, 3, text_field.vocab.stoi['<pad>'])
+    #build model
     model = BuildModel.build(args.model,args).to(device)
-
-    # if len(device_ids) > 1:
-    #     model = nn.DataParallel(model)
-
-    dict_dataset_train = train_dataset.image_dictionary({'image': image_field, 'text': RawField()})
-    ref_caps_train = list(train_dataset.text)
+    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('\nmodel size: %d\n'%n_parameters)
+    ref_caps_train = list(datasets['train'].text)
     cider_train = Cider(PTBTokenizer.tokenize(ref_caps_train))
-    dict_dataset_val = val_dataset.image_dictionary({'image': image_field, 'text': RawField()})
-    dict_dataset_test = test_dataset.image_dictionary({'image': image_field, 'text': RawField()})
 
     '''
     def lambda_lr(s):
@@ -335,19 +339,16 @@ if __name__ == '__main__':
 
     print("Training starts")
     for e in range(start_epoch, start_epoch + 100):
-        dataloader_train = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers,
-                                      drop_last=True)
-        dataloader_val = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
-        dict_dataloader_train = DataLoader(dict_dataset_train, batch_size=args.batch_size // 5, shuffle=True,
-                                           num_workers=args.workers)
-        dict_dataloader_val = DataLoader(dict_dataset_val, batch_size=args.batch_size // 5)
-        dict_dataloader_test = DataLoader(dict_dataset_test, batch_size=args.batch_size // 5)
+
+        dataloader_train = DataLoader(dataset=datasets['train'],collate_fn=datasets['train'].collate_fn(),batch_size=args.batch_size,shuffle=True,num_workers=args.workers)
+        dataloader_val = DataLoader(dataset=datasets['val'],collate_fn=datasets['val'].collate_fn(),batch_size=args.batch_size,shuffle=False,num_workers=args.workers)
+        dict_dataloader_train = DataLoader(dataset=datasets_evalue['e_train'],collate_fn=datasets_evalue['e_train'].collate_fn(),batch_size=args.batch_size//5,shuffle=True,num_workers=args.workers)
+        dict_dataloader_val = DataLoader(dataset=datasets_evalue['e_val'],collate_fn=datasets_evalue['e_val'].collate_fn(),batch_size=args.batch_size//5,shuffle=False,num_workers=args.workers)
+        dict_dataloader_test = DataLoader(dataset=datasets_evalue['e_test'],collate_fn=datasets_evalue['e_test'].collate_fn(),batch_size=args.batch_size//5,shuffle=False,num_workers=args.workers)
 
         log.write_log('epoch%d:\n'%e)
 
-
-
-        if  use_rl:
+        if  not use_rl:
             train_loss = train_xe(model, dataloader_train, optim, text_field)
             writer.add_scalar('data/train_loss', train_loss, e)
             log.write_log('state = %s \n'%'base_train')

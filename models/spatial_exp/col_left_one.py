@@ -10,7 +10,7 @@ import torch
 from models.containers import ModuleList,Module
 from torch.nn import functional as F
 
-def build_col_left_one():
+def build_col_left_one(args):
     en = Encoder_Col(3,0)
     de = Decoder_Col(10201,54,3,1)
     return Transformer(2,en,de)

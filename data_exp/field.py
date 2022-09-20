@@ -10,96 +10,61 @@ import os
 import warnings
 import shutil
 
-from .dataset import Dataset
 from .vocab import Vocab
 from .utils import get_tokenizer
 
 
 class RawField(object):
-    """ Defines a general datatype.
-
-    Every dataset consists of one or more types of data. For instance,
-    a machine translation dataset contains paired examples of text, while
-    an image captioning dataset contains images and texts.
-    Each of these types of data is represented by a RawField object.
-    An RawField object does not assume any property of the data type and
-    it holds parameters relating to how a datatype should be processed.
-
-    Attributes:
-        preprocessing: The Pipeline that will be applied to examples
-            using this field before creating an example.
-            Default: None.
-        postprocessing: A Pipeline that will be applied to a list of examples
-            using this field before assigning to a batch.
-            Function signature: (batch(list)) -> object
-            Default: None.
-    """
 
     def __init__(self, preprocessing=None, postprocessing=None):
         self.preprocessing = preprocessing
         self.postprocessing = postprocessing
 
     def preprocess(self, x):
-        """ Preprocess an example if the `preprocessing` Pipeline is provided. """
+
         if self.preprocessing is not None:
             return self.preprocessing(x)
         else:
             return x
 
     def process(self, batch, *args, **kwargs):
-        """ Process a list of examples to create a batch.
 
-        Postprocess the batch with user-provided Pipeline.
-
-        Args:
-            batch (list(object)): A list of object from a batch of examples.
-        Returns:
-            object: Processed object given the input and custom
-                postprocessing Pipeline.
-        """
         if self.postprocessing is not None:
             batch = self.postprocessing(batch)
         return default_collate(batch)
 
 
-class Merge(RawField):
-    def __init__(self, *fields):
-        super(Merge, self).__init__()
-        self.fields = fields
+class BoxField(RawField):
+    def __init__(self,preprocessing=None, postprocessing=None,dect_path = '/media/awen/D/dataset/coco_detections.hdf5'):
+        super(BoxField,self).__init__()
+
+        self.dect = h5py.File(os.path.join(dect_path,'coco_detections.hdf5'),'r')
 
     def preprocess(self, x):
-        return tuple(f.preprocess(x) for f in self.fields)
+        temp = []
+        data = self.dect['%d_boxes'%x][()]
+        temp.append(data)
+        data = self.dect['%d_cls_prob'%x][()]
+        temp.append(np.argmax(data,-1).tolist())
+        
+        return temp
+    def process(self, batch):
+        batchs = []
+        for ba in batch:
+            boxes =  default_collate(ba[0])
+            labels = default_collate(ba[1])
+            batchs.append({'boxes':boxes,'labels':labels})
 
-    def process(self, batch, *args, **kwargs):
-        if len(self.fields) == 1:
-            batch = [batch, ]
-        else:
-            batch = list(zip(*batch))
+        return batchs
 
-        out = list(f.process(b, *args, **kwargs) for f, b in zip(self.fields, batch))
-        return out
 
 
 class ImageDetectionsField(RawField):
     def __init__(self, preprocessing=None, postprocessing=None, detections_path=None, max_detections=100,
-                 sort_by_prob=False, load_in_tmp=True):
+                 sort_by_prob=False):
         self.max_detections = max_detections
         self.detections_path = detections_path
         self.sort_by_prob = sort_by_prob #false 
-
-        tmp_detections_path = os.path.join('/tmp', os.path.basename(detections_path))
-
-        if load_in_tmp: #false
-            if not os.path.isfile(tmp_detections_path):
-                if shutil.disk_usage("/tmp")[-1] < os.path.getsize(detections_path):
-                    warnings.warn('Loading from %s, because /tmp has no enough space.' % detections_path)
-                else:
-                    warnings.warn("Copying detection file to /tmp")
-                    shutil.copyfile(detections_path, tmp_detections_path)
-                    warnings.warn("Done.")
-                    self.detections_path = tmp_detections_path
-            else:
-                self.detections_path = tmp_detections_path
 
         super(ImageDetectionsField, self).__init__(preprocessing, postprocessing)
 
@@ -191,38 +156,8 @@ class TextField(RawField):
         tensor = self.numericalize(padded, device=device)
         return tensor
 
-    def build_vocab(self, *args, **kwargs):
-        counter = Counter()
-        sources = []
-        for arg in args:
-            if isinstance(arg, Dataset):
-                sources += [getattr(arg, name) for name, field in arg.fields.items() if field is self]
-            else:
-                sources.append(arg)
-
-        for data in sources:
-            for x in data:
-                x = self.preprocess(x)
-                try:
-                    counter.update(x)
-                except TypeError:
-                    counter.update(chain.from_iterable(x))
-
-        specials = list(OrderedDict.fromkeys([
-            tok for tok in [self.unk_token, self.pad_token, self.init_token,
-                            self.eos_token]
-            if tok is not None]))
-        self.vocab = self.vocab_cls(counter, specials=specials, **kwargs)
-
     def pad(self, minibatch):
-        """Pad a batch of examples using this field.
-        Pads to self.fix_length if provided, otherwise pads to the length of
-        the longest example in the batch. Prepends self.init_token and appends
-        self.eos_token if those attributes are not None. Returns a tuple of the
-        padded list and a list containing lengths of each example if
-        `self.include_lengths` is `True`, else just
-        returns the padded list.
-        """
+
         minibatch = list(minibatch)
         if self.fix_length is None:
             max_len = max(len(x) for x in minibatch)
@@ -249,18 +184,7 @@ class TextField(RawField):
         return padded
 
     def numericalize(self, arr, device=None):
-        """Turn a batch of examples that use this field into a list of Variables.
-        If the field has include_lengths=True, a tensor of lengths will be
-        included in the return value.
-        Arguments:
-            arr (List[List[str]], or tuple of (List[List[str]], List[int])):
-                List of tokenized and padded examples, or tuple of List of
-                tokenized and padded examples and List of lengths of each
-                example if self.include_lengths is True.
-            device (str or torch.device): A string or instance of `torch.device`
-                specifying which device the Variables are going to be created on.
-                If left as default, the tensors will be created on cpu. Default: None.
-        """
+
         if self.include_lengths and not isinstance(arr, tuple):
             raise ValueError("Field has include_lengths set to True, but "
                              "input data is not a tuple of "
@@ -328,6 +252,7 @@ class TextField(RawField):
                 caption = ' '.join(caption)
             captions.append(caption)
         return captions
+    
 
 
 

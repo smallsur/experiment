@@ -6,7 +6,7 @@ if __name__ =="__main__":
 
     parser = argparse.ArgumentParser(description='Experiment_Helper')
 
-    parser.add_argument("--del_cache",type=bool,default=False)
+    parser.add_argument("--del_cache",type=bool,default=True)
 
     args = parser.parse_args()
     

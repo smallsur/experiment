@@ -4,8 +4,8 @@ class BuildModel:
         print("Model Build prepared...\n")
 
     @classmethod
-    def build(BuildModel,name:int):
-        model = BuildModel.buildFunc[name]()
+    def build(BuildModel,name:int,args):
+        model = BuildModel.buildFunc[name](args)
 
         print("Model Build %d :%s \n"%(name,getattr(BuildModel.buildFunc[name],'__name__')))
         return model

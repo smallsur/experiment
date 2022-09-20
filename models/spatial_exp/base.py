@@ -3,7 +3,7 @@ from .decoders import Decoder
 from .transformer import Transformer
 from models.build import BuildModel
 
-def build_base():
+def build_base(args):
     en = Encoder(3,0)
     de = Decoder(10201,54,3,1)
     return Transformer(2,en,de)

@@ -245,7 +245,7 @@ class COCO(PairedDataset):
             if ids_dataset is None:
                 ids = list(coco_dataset.anns.keys())
             else:
-                ids = ids_dataset[split]
+                ids = ids_dataset[split] # 所有train的id，和trainrestal一样
 
             if isinstance(ids, tuple):
                 bp = len(ids[0])
