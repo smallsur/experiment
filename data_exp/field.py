@@ -11,7 +11,7 @@ import warnings
 import shutil
 
 from .vocab import Vocab
-from .utils import get_tokenizer
+from .utils import get_tokenizer,load_json
 
 
 class RawField(object):
@@ -35,19 +35,31 @@ class RawField(object):
 
 
 class BoxField(RawField):
-    def __init__(self,preprocessing=None, postprocessing=None,dect_path = '/media/awen/D/dataset/coco_detections.hdf5'):
+    def __init__(self,preprocessing=None, postprocessing=None,dect_path = '/media/awen/D/dataset',sc_image_path='/media/awen/D/dataset/rstnet/Datasets/m2_annotations'):
         super(BoxField,self).__init__()
 
         self.dect = h5py.File(os.path.join(dect_path,'coco_detections.hdf5'),'r')
+        self.scale = load_json(os.path.join(sc_image_path,'image_to_scale.json'))
 
     def preprocess(self, x):
         temp = []
+        cv =[]
+
         data = self.dect['%d_boxes'%x][()]
-        temp.append(data)
+        width = self.scale[str(x)]['width']
+        height = self.scale[str(x)]['height']
+        
+        for b in data:
+            c = [(b[2]+b[0])/(2*width),(b[3]+b[1])/(2*height),(b[2]-b[0])/width,(b[3]-b[1])/height]
+            cv.append(c)
+
+        temp.append(np.array(cv,dtype=np.float32))
+
         data = self.dect['%d_cls_prob'%x][()]
         temp.append(np.argmax(data,-1).tolist())
         
         return temp
+
     def process(self, batch):
         batchs = []
         for ba in batch:
@@ -57,6 +69,9 @@ class BoxField(RawField):
 
         return batchs
 
+    # def xyxy_to_xywh(self,box):
+
+
 
 
 class ImageDetectionsField(RawField):
@@ -65,7 +80,6 @@ class ImageDetectionsField(RawField):
         self.max_detections = max_detections
         self.detections_path = detections_path
         self.sort_by_prob = sort_by_prob #false 
-
         super(ImageDetectionsField, self).__init__(preprocessing, postprocessing)
 
     def preprocess(self, x, avoid_precomp=False):

@@ -1,3 +1,4 @@
+from email.mime import image
 from tkinter import Image
 import numpy as np
 import pandas as pd
@@ -6,17 +7,19 @@ import h5py
 from tqdm import tqdm
 
 
-fy = h5py.File('/media/awen/D/dataset/coco_detections.hdf5','r')
+# fy = h5py.File('/media/awen/D/dataset/rstnet/coco_detections.hdf5','a')
 
 # print(f.keys())
+# for k in fy.keys():
+    # if '_features' in k:
+    #     fy.__delitem__(k)
+    # print(k)
 
 
-
-
-caption_train=None
-caption_val=None
-ins_train=None
-ins_val=None
+# caption_train=None
+# caption_val=None
+# ins_train=None
+# ins_val=None
 with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/captions_train2014.json','r') as f:
     caption_train = json.load(f)#image = 82783 ann = 414113
 
@@ -30,27 +33,36 @@ with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/captions_val2014
 # with open('/media/awen/D/dataset/coco_2014/annotations/instances_val2014.json','r') as f:
 #     ins_val = json.load(f)#40504 291875
 
-examples = {}#_features,_boxes,_cls_prob
-val_examples = {}
-test_examples ={}
-imageid_to_id = {}
-imageid_to_id_box = {}
-
+# examples = {}#_features,_boxes,_cls_prob
+# val_examples = {}
+# test_examples ={}
+# imageid_to_id = {}
+# imageid_to_id_box = {}
+image_to_scale = {}
 for data in [caption_train,caption_val]:
 
-    for item in data.get('annotations'):
-        examples[item['id']] = {'image_id':item['image_id'],'caption':item['caption']}
-        if item['image_id'] not in imageid_to_id:
-            imageid_to_id[item['image_id']]=[]
-        imageid_to_id[item['image_id']].append(item['id'])
-
-
     for item in data.get('images'):
-        ids = imageid_to_id[item['id']]
-        for i in ids:
-            examples[i]['file_name']=item['file_name']
+        image_id = item['id']
+        height = item['height']
+        width = item['width']
+        image_to_scale[image_id] ={'height':height, 'width':width}
+
+with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/image_to_scale.json','w+') as f:
+    json.dump(image_to_scale, f)
+
+#     for item in data.get('annotations'):
+#         examples[item['id']] = {'image_id':item['image_id'],'caption':item['caption']}
+#         if item['image_id'] not in imageid_to_id:
+#             imageid_to_id[item['image_id']]=[]
+#         imageid_to_id[item['image_id']].append(item['id'])
+
+
+    # for item in data.get('images'):
+    #     ids = imageid_to_id[item['id']]
+    #     for i in ids:
+    #         examples[i]['file_name']=item['file_name']
     
-print("Switching")
+# print("Switching")
 
 
 # for data in [ins_train,ins_val]:
@@ -68,20 +80,20 @@ print("Switching")
 #         if item['image_id'] not in imageid_to_id_box:
 #             imageid_to_id_box[item['image_id']]=[]
 #         imageid_to_id_box[item['image_id']].append(item['id'])
-with tqdm(desc='process', unit='it', total=len(imageid_to_id.keys())) as pbar:
-    for it, image_id in enumerate(imageid_to_id.keys()):#_features,_boxes,_cls_prob
-        for i in ids:
-            data = fy['%d_boxes'%image_id][()]
-            examples[i]['box'] = data.tolist()
-            data = fy['%d_cls_prob'%image_id][()]
-            examples[i]['label'] = np.argmax(data,-1).tolist()
-        pbar.update()
+# with tqdm(desc='process', unit='it', total=len(imageid_to_id.keys())) as pbar:
+#     for it, image_id in enumerate(imageid_to_id.keys()):#_features,_boxes,_cls_prob
+#         for i in ids:
+#             data = fy['%d_boxes'%image_id][()]
+#             examples[i]['box'] = data.tolist()
+#             data = fy['%d_cls_prob'%image_id][()]
+#             examples[i]['label'] = np.argmax(data,-1).tolist()
+#         pbar.update()
 
-with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/convert.json','w+') as f:
-    json.dump(examples,f)
+# with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/convert.json','w+') as f:
+#     json.dump(examples,f)
 
-with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/imageid_to_id.json','w+') as f:
-    json.dump(imageid_to_id, f)
+# with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/imageid_to_id.json','w+') as f:
+#     json.dump(imageid_to_id, f)
 
 # with open('/media/awen/D/dataset/coco_2014/annotations/imageid_to_id_box.json','w+') as f:
 #     json.dump(imageid_to_id_box, f)

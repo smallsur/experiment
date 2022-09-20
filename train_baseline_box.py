@@ -195,7 +195,7 @@ if __name__ == '__main__':
     parser.add_argument('--dect_path', type=str, default='')
 
     parser.add_argument('--path_prefix',type=str,default='/media/awen/D/dataset/rstnet')
-    parser.add_argument('--path_prefix_web',type=str,default='/media/a1002-2/ccc739a0-163b-4b54-b335-f12f0d52de59/zhangawen/dataset/rstnet')
+    parser.add_argument('--path_prefix_web',type=str,default='/media/a1002/8b95f0e0-6f6d-4dcb-a09a-a0272b8be2b7/zhangawen/rstnet')
     parser.add_argument('--path_vocab',type=str,default='vocab.pkl')
     
     parser.add_argument('--xe_least', type=int, default=15)
@@ -348,7 +348,7 @@ if __name__ == '__main__':
 
         log.write_log('epoch%d:\n'%e)
 
-        if  not use_rl:
+        if  not  use_rl:
             train_loss = train_xe(model, dataloader_train, optim, text_field)
             writer.add_scalar('data/train_loss', train_loss, e)
             log.write_log('state = %s \n'%'base_train')
