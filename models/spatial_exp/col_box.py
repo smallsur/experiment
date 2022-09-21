@@ -3,33 +3,31 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-
-
 from .attention import MultiHeadAttention
 from .position_encoding import build_position_encoding
 from models.transformer.utils import sinusoid_encoding_table
-from models.containers import ModuleList,Module
+from models.containers import ModuleList, Module
 from models.build import BuildModel
 from models.transformer.utils import PositionWiseFeedForward
 from models.captioning_model import CaptioningModel
 from .matcher import build_matcher
-from utils import box_cxcywh_to_xyxy, generalized_box_iou,is_dist_avail_and_initialized,get_world_size,accuracy
+from utils import box_cxcywh_to_xyxy, generalized_box_iou, is_dist_avail_and_initialized, get_world_size, accuracy
 
 num_classes = 1601
 
+
 #  args.hidden_dim,args.lr_backbone,
 def col_box(args):
-    encoder = MultiLevelEncoder_Box(6,padding_idx=0)
-    decoder_box = Decoder_Box(6)
-    decoder_cap = Decoder_Caption(10201,54,3,1)
-    return Transformer(2,encoder,decoder_box,decoder_cap)
+    encoder = MultiLevelEncoder_Box(6, padding_idx=0)
+    decoder_box = Decoder_Box(6, aux_outputs=args.aux_outputs)
+    decoder_cap = Decoder_Caption(10201, 54, 3, 1)
+    return Transformer(2, encoder, decoder_box, decoder_cap)
 
-BuildModel.add(3,col_box)
 
+BuildModel.add(3, col_box)
 
 
 class MLP(nn.Module):
-    """ Very simple multi-layer perceptron (also called FFN)"""
 
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
         super().__init__()
@@ -42,6 +40,7 @@ class MLP(nn.Module):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
 
+
 class EncoderLayer_Box(nn.Module):
     def __init__(self, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1, identity_map_reordering=False):
         super(EncoderLayer_Box, self).__init__()
@@ -50,7 +49,7 @@ class EncoderLayer_Box(nn.Module):
 
         self.pwff = PositionWiseFeedForward(d_model, d_ff, dropout, identity_map_reordering=identity_map_reordering)
 
-    def forward(self, queries, keys, values, attention_mask=None, attention_weights=None,pos=None):
+    def forward(self, queries, keys, values, attention_mask=None, attention_weights=None, pos=None):
         if pos is not None:
             queries = queries + pos
             keys = keys + pos
@@ -60,11 +59,10 @@ class EncoderLayer_Box(nn.Module):
         return ff
 
 
-
 class DecoderLayer_Box(Module):
     def __init__(self, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1):
         super(DecoderLayer_Box, self).__init__()
-        
+
         self.self_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=False)
         self.enc_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=False)
         self.dropout1 = nn.Dropout(dropout)
@@ -74,10 +72,11 @@ class DecoderLayer_Box(Module):
         self.lnorm2 = nn.LayerNorm(d_model)
         self.pwff = PositionWiseFeedForward(d_model, d_ff, dropout)
 
-    def forward(self, object_query, enc_output, mask_pad =None, mask_self_att=None, mask_enc_att=None,pos=None,pos_emb=None):
+    def forward(self, object_query, enc_output, mask_pad=None, mask_self_att=None, mask_enc_att=None, pos=None,
+                pos_emb=None):
         if pos_emb is not None:
-            q = k = object_query + pos_emb 
-        # MHA+AddNorm
+            q = k = object_query + pos_emb
+            # MHA+AddNorm
         self_att = self.self_att(q, k, object_query, mask_self_att)
         self_att = self.lnorm1(object_query + self.dropout1(self_att))
 
@@ -85,7 +84,7 @@ class DecoderLayer_Box(Module):
         if pos_emb is not None:
             self_att = self_att + pos_emb
 
-        enc_att = self.enc_att(self_att, enc_output + pos , enc_output, mask_enc_att)
+        enc_att = self.enc_att(self_att, enc_output + pos, enc_output, mask_enc_att)
         enc_att = self.lnorm2(self_att + self.dropout2(enc_att))
         # FFN+AddNorm
 
@@ -97,7 +96,7 @@ class DecoderLayer_Box(Module):
 class DecoderLayer_Caption(Module):
     def __init__(self, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1):
         super(DecoderLayer_Caption, self).__init__()
-        
+
         self.self_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=True)
         self.enc_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=False)
         self.dropout1 = nn.Dropout(dropout)
@@ -122,26 +121,24 @@ class DecoderLayer_Caption(Module):
         return ff
 
 
-
 class MultiLevelEncoder_Box(nn.Module):
-    def __init__(self, N, padding_idx, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1,d_in=2048,
+    def __init__(self, N, padding_idx, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1, d_in=2048,
                  identity_map_reordering=False):
         super(MultiLevelEncoder_Box, self).__init__()
         self.d_model = d_model
         self.dropout = dropout
         self.layers = ModuleList([EncoderLayer_Box(d_model, d_k, d_v, h, d_ff, dropout,
-                                                  identity_map_reordering=identity_map_reordering)
-                                     for _ in range(N)])
-        self.pos = build_position_encoding(512,'sine')
+                                                   identity_map_reordering=identity_map_reordering)
+                                  for _ in range(N)])
+        self.pos = build_position_encoding(512, 'sine')
         self.padding_idx = padding_idx
         self.fc = nn.Linear(d_in, self.d_model)
         self.drop = nn.Dropout(p=self.dropout)
         self.layer_norm = nn.LayerNorm(self.d_model)
 
     def forward(self, input, attention_weights=None):
-
         attention_mask = (torch.sum(input, -1) == self.padding_idx).unsqueeze(1).unsqueeze(1)  # (b_s, 1, 1, seq_len)
-        pos_ = self.pos(input,attention_mask)
+        pos_ = self.pos(input, attention_mask)
 
         outs = []
         out = input
@@ -151,19 +148,19 @@ class MultiLevelEncoder_Box(nn.Module):
         out = self.layer_norm(out)
 
         for l in self.layers:
-            out = l(out, out, out, attention_mask, attention_weights,pos=pos_)
+            out = l(out, out, out, attention_mask, attention_weights, pos=pos_)
             outs.append(out.unsqueeze(1))
 
-        outs = torch.cat(outs, 1)
+        # outs = torch.cat(outs, 1)
         # out = input
         # for l in self.layers:
         #     out = l(out, out, out, attention_mask, attention_weights)
         return out, attention_mask, pos_
 
 
-
 class Decoder_Box(Module):
-    def __init__(self, N_dec, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1, num_queries=100,num_classes=1601,aux_outputs = False):
+    def __init__(self, N_dec, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1, num_queries=100,
+                 num_classes=1601, aux_outputs=False):
         super(Decoder_Box, self).__init__()
 
         self.d_model = d_model
@@ -173,16 +170,15 @@ class Decoder_Box(Module):
 
         self.N = N_dec
         self.num_classes = num_classes
-        self.num_queries =num_queries
+        self.num_queries = num_queries
         self.query_embed = nn.Embedding(num_queries, d_model)
 
         self.class_embed = nn.Linear(d_model, num_classes + 1)
-        self.bbox_embed = MLP(d_model, d_model, 4, 3)################################
+        self.bbox_embed = MLP(d_model, d_model, 4, 3)  ################################
 
         self.aux_outputs = aux_outputs
 
-
-    def forward(self, encoder_output, mask_encoder , pos):
+    def forward(self, encoder_output, mask_encoder, pos):
 
         bs = pos.shape[0]
         pos_emb = self.query_embed.weight
@@ -191,9 +187,8 @@ class Decoder_Box(Module):
 
         intermediate = []
         for i, l in enumerate(self.layers):
-            tgt = l(tgt,encoder_output,mask_enc_att=mask_encoder, pos=pos,pos_emb=pos_emb)
+            tgt = l(tgt, encoder_output, mask_enc_att=mask_encoder, pos=pos, pos_emb=pos_emb)
             intermediate.append(tgt)
-
 
         intermediate = torch.stack(intermediate)
 
@@ -216,9 +211,9 @@ class Decoder_Box(Module):
                 for a, b in zip(outputs_class[:-1], outputs_coord[:-1])]
 
 
-
 class Decoder_Caption(Module):
-    def __init__(self, vocab_size, max_len, N_dec, padding_idx, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1):
+    def __init__(self, vocab_size, max_len, N_dec, padding_idx, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048,
+                 dropout=.1):
         super(Decoder_Caption, self).__init__()
         self.d_model = d_model
         self.word_emb = nn.Embedding(vocab_size, d_model, padding_idx=padding_idx)
@@ -243,7 +238,8 @@ class Decoder_Caption(Module):
         mask_self_attention = mask_self_attention + (input == self.padding_idx).unsqueeze(1).unsqueeze(1).byte()
         mask_self_attention = mask_self_attention.gt(0)  # (b_s, 1, seq_len, seq_len)
         if self._is_stateful:
-            self.running_mask_self_attention = torch.cat([self.running_mask_self_attention.type_as(mask_self_attention), mask_self_attention], -1)
+            self.running_mask_self_attention = torch.cat(
+                [self.running_mask_self_attention.type_as(mask_self_attention), mask_self_attention], -1)
             mask_self_attention = self.running_mask_self_attention
 
         seq = torch.arange(1, seq_len + 1).view(1, -1).expand(b_s, -1).to(input.device)  # (b_s, seq_len)
@@ -253,7 +249,7 @@ class Decoder_Caption(Module):
             seq = self.running_seq
 
         out = self.word_emb(input) + self.pos_emb(seq)
-    
+
         for i, l in enumerate(self.layers):
             out = l(out, encoder_output, mask_queries, mask_self_attention, mask_encoder)
 
@@ -262,7 +258,7 @@ class Decoder_Caption(Module):
 
 
 class Transformer(CaptioningModel):
-    def __init__(self, bos_idx, encoder, decoder_box ,decoder_cap):
+    def __init__(self, bos_idx, encoder, decoder_box, decoder_cap):
         super(Transformer, self).__init__()
 
         self.bos_idx = bos_idx
@@ -271,23 +267,21 @@ class Transformer(CaptioningModel):
         self.decoder_box = decoder_box
         self.decoder_cap = decoder_cap
 
-
-        self.num_classes =self.decoder_box.num_classes
+        self.num_classes = self.decoder_box.num_classes
         self.aux_outputs = self.decoder_box.aux_outputs
 
-    
         self.register_state('enc_output', None)
         self.register_state('mask_enc', None)
         # self.register_state('cap_output',None)
-        self.register_state('pos',None)
-
+        self.register_state('pos', None)
+        # self.aux_loss = aux_loss
         self.build_loss()
 
         self.init_weights()
 
     def build_loss(self):
         self.matcher = build_matcher()
-        weight_dict = {'loss_ce': 1, 'loss_bbox': 5} #1 ，5
+        weight_dict = {'loss_ce': 1, 'loss_bbox': 5}  # 1 ，5
         weight_dict['loss_giou'] = 2
 
         if self.aux_outputs:
@@ -299,26 +293,26 @@ class Transformer(CaptioningModel):
         losses = ['labels', 'boxes', 'cardinality']
 
         self.criterion = SetCriterion(self.num_classes, matcher=self.matcher, weight_dict=weight_dict,
-                                eos_coef=0.1, losses=losses)
+                                      eos_coef=0.1, losses=losses)
 
     @property
     def d_model(self):
         return self.decoder_box.d_model
-    
+
     def init_weights(self):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
     def forward(self, images, seq):
-        enc_output, mask_enc, pos= self.encoder(images)
+        enc_output, mask_enc, pos = self.encoder(images)
         # dec_output = self.decoder(seq, enc_output, mask_enc)
-        box_output = self.decoder_box(enc_output,mask_enc,pos)
+        box_output = self.decoder_box(enc_output, mask_enc, pos)
         cap_output = self.decoder_cap(seq, enc_output, mask_enc)
-        return box_output,cap_output
+        return box_output, cap_output
 
-    def forward_box_loss(self,output,target):
-        loss_dict = self.criterion(output,target)
+    def forward_box_loss(self, output, target):
+        loss_dict = self.criterion(output, target)
         weight_dict = self.criterion.weight_dict
 
         losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
@@ -335,8 +329,8 @@ class Transformer(CaptioningModel):
             raise NotImplementedError
         elif mode == 'feedback':
             if t == 0:
-                self.enc_output, self.mask_enc,self.pos = self.encoder(visual)
-                
+                self.enc_output, self.mask_enc, self.pos = self.encoder(visual)
+
                 if isinstance(visual, torch.Tensor):
                     it = visual.data.new_full((visual.shape[0], 1), self.bos_idx).long()
                 else:
@@ -345,8 +339,6 @@ class Transformer(CaptioningModel):
                 it = prev_output
 
         return self.decoder_cap(it, self.enc_output, self.mask_enc)
-    
-
 
 
 class SetCriterion(nn.Module):
@@ -375,10 +367,10 @@ class SetCriterion(nn.Module):
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
         assert 'pred_logits' in outputs
-        src_logits = outputs['pred_logits']#2*100*92
+        src_logits = outputs['pred_logits']  # 2*100*92
 
-        idx = self._get_src_permutation_idx(indices)#batchidx,idx
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])#batch*numbox
+        idx = self._get_src_permutation_idx(indices)  # batchidx,idx
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])  # batch*numbox
         target_classes = torch.full(src_logits.shape[:2], self.num_classes,
                                     dtype=torch.int64, device=src_logits.device)
         target_classes[idx] = target_classes_o
@@ -488,14 +480,3 @@ class SetCriterion(nn.Module):
                     losses.update(l_dict)
 
         return losses
-
-
-
-
-
-
-
-
-
-
-

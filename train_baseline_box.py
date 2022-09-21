@@ -95,7 +95,7 @@ def train_xe(model, dataloader, optim, text_field):
     
     running_loss = .0
     with tqdm(desc='Epoch %d - train' % e, unit='it', total=len(dataloader)) as pbar:#x1,y1,x2,y12
-        for it, (detections,targets, captions) in enumerate(dataloader):
+        for it, (detections, targets, captions) in enumerate(dataloader):
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
             detections,  captions = detections.to(device), captions.to(device) #batch len dim ,batch*
             box_out,cap_out = model(detections, captions)
@@ -106,7 +106,7 @@ def train_xe(model, dataloader, optim, text_field):
 
             loss_box = model.forward_box_loss(box_out,targets)
             
-            loss = args.norm_r * loss_box + (1-args.norm_r) *loss_cap
+            loss = args.norm_r * loss_box + (1-args.norm_r) * loss_cap
 
             optim.zero_grad()
             loss.backward()
@@ -199,33 +199,34 @@ if __name__ == '__main__':
     parser.add_argument('--path_vocab',type=str,default='vocab.pkl')
     
     parser.add_argument('--xe_least', type=int, default=15)
-    parser.add_argument('--xe_most', type=int, default=20)
+    parser.add_argument('--xe_most', type=int, default=30)
     parser.add_argument('--refine_epoch_rl', type=int, default=28)
     parser.add_argument('--xe_base_lr', type=float, default=0.0001)
     parser.add_argument('--rl_base_lr', type=float, default=5e-6)
-    parser.add_argument('--norm_r', type=float, default=0.5)
+    parser.add_argument('--norm_r', type=float, default=0.25)
 
     #参数调整
-    parser.add_argument('--id',type=str, default='default')
-    parser.add_argument('--model',type=int, default=3)
-    parser.add_argument('--web',type=bool,default=False)
+    parser.add_argument('--id', type=str, default='default')
+    parser.add_argument('--model', type=int, default=3)
+    parser.add_argument('--web', type=bool, default=False)
     parser.add_argument('--gpu_id', type=int, default=0)
+    parser.add_argument('--aux_outputs', type=bool, default=True)
 
     args = parser.parse_args()
 
     torch.cuda.set_device(args.gpu_id)
     
-    print("现在正在使用的GPU编号:",end="")
+    print("现在正在使用的GPU编号:", end="")
     print(torch.cuda.current_device())
     
 #*******************************************************************************
     if args.web:
         args.path_prefix = args.path_prefix_web
 
-    path_=['features_path','annotation_folder','dir_to_save_model','logs_folder','path_vocab','path_txtlog','dect_path']
+    path_ = ['features_path', 'annotation_folder', 'dir_to_save_model', 'logs_folder', 'path_vocab', 'path_txtlog', 'dect_path']
 
-    for p in path_:
-        setattr(args,p,os.path.join(args.path_prefix,getattr(args,p)))
+    for p in path_ :
+        setattr(args, p, os.path.join(args.path_prefix, getattr(args, p)))
 
 #*******************************************************************************
     print(args)
@@ -235,8 +236,8 @@ if __name__ == '__main__':
 
 
     #init textlog
-    log = Logger(args.id+"_"+ str(datetime.today().date()),args.path_txtlog)
-    log.write_log("args seting:\n"+str(args)+"\n")
+    log = Logger(args.id+"_" + str(datetime.today().date()), args.path_txtlog)
+    log.write_log("args setting:\n"+str(args)+"\n")
     log.write_log("****************************init******************************\n")
 
     text_field = TextField(init_token='<bos>', eos_token='<eos>', lower=True, tokenize='spacy', remove_punctuation=True, nopoints=False)
@@ -246,12 +247,12 @@ if __name__ == '__main__':
     text_field.vocab = pickle.load(open(args.path_vocab, 'rb'))
 
     #build dataset,dataloader
-    datasets, datasets_evalue= Build_DataSet(args=args,text_field=text_field)
+    datasets, datasets_evalue = Build_DataSet(args=args, text_field=text_field)
 
     #build model
-    model = BuildModel.build(args.model,args).to(device)
+    model = BuildModel.build(args.model, args).to(device)
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print('\nmodel size: %d\n'%n_parameters)
+    print('\n model size: %d\n' % n_parameters)
     ref_caps_train = list(datasets['train'].text)
     cider_train = Cider(PTBTokenizer.tokenize(ref_caps_train))
 
@@ -340,36 +341,41 @@ if __name__ == '__main__':
     print("Training starts")
     for e in range(start_epoch, start_epoch + 100):
 
-        dataloader_train = DataLoader(dataset=datasets['train'],collate_fn=datasets['train'].collate_fn(),batch_size=args.batch_size,shuffle=True,num_workers=args.workers)
-        dataloader_val = DataLoader(dataset=datasets['val'],collate_fn=datasets['val'].collate_fn(),batch_size=args.batch_size,shuffle=False,num_workers=args.workers)
-        dict_dataloader_train = DataLoader(dataset=datasets_evalue['e_train'],collate_fn=datasets_evalue['e_train'].collate_fn(),batch_size=args.batch_size//5,shuffle=True,num_workers=args.workers)
-        dict_dataloader_val = DataLoader(dataset=datasets_evalue['e_val'],collate_fn=datasets_evalue['e_val'].collate_fn(),batch_size=args.batch_size//5,shuffle=False,num_workers=args.workers)
-        dict_dataloader_test = DataLoader(dataset=datasets_evalue['e_test'],collate_fn=datasets_evalue['e_test'].collate_fn(),batch_size=args.batch_size//5,shuffle=False,num_workers=args.workers)
+        dataloader_train = DataLoader(dataset=datasets['train'], collate_fn=datasets['train'].collate_fn(),
+                                      batch_size=args.batch_size, shuffle=True,num_workers=args.workers)
+        dataloader_val = DataLoader(dataset=datasets['val'], collate_fn=datasets['val'].collate_fn(),
+                                    batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+        dict_dataloader_train = DataLoader(dataset=datasets_evalue['e_train'], collate_fn=datasets_evalue['e_train'].collate_fn(),
+                                           batch_size=args.batch_size//5, shuffle=True, num_workers=args.workers)
+        dict_dataloader_val = DataLoader(dataset=datasets_evalue['e_val'], collate_fn=datasets_evalue['e_val'].collate_fn(),
+                                         batch_size=args.batch_size//5, shuffle=False, num_workers=args.workers)
+        dict_dataloader_test = DataLoader(dataset=datasets_evalue['e_test'], collate_fn=datasets_evalue['e_test'].collate_fn(),
+                                          batch_size=args.batch_size//5, shuffle=False, num_workers=args.workers)
 
-        log.write_log('epoch%d:\n'%e)
+        log.write_log('epoch%d:\n' % e)
 
         if  not  use_rl:
             train_loss = train_xe(model, dataloader_train, optim, text_field)
             writer.add_scalar('data/train_loss', train_loss, e)
-            log.write_log('state = %s \n'%'base_train')
-            log.write_log(' train_loss = %f \n'%train_loss)
+            log.write_log('state = %s \n' % 'base_train')
+            log.write_log(' train_loss = %f \n' % train_loss)
             
         else:
             train_loss, reward, reward_baseline = train_scst(model, dict_dataloader_train, optim_rl, cider_train, text_field)
             writer.add_scalar('data/train_loss', train_loss, e)
             writer.add_scalar('data/reward', reward, e)
             writer.add_scalar('data/reward_baseline', reward_baseline, e)
-            log.write_log('state = %s \n'%'rl_train')
+            log.write_log('state = %s \n' % 'rl_train')
             log.write_log(' train_loss = %f \n'%train_loss)
-            log.write_log(' reword = %f \n'%reward)
-            log.write_log(' reward_baseline = %f \n'%reward_baseline)
+            log.write_log(' reword = %f \n' % reward)
+            log.write_log(' reward_baseline = %f \n' % reward_baseline)
 
         
         # Validation loss
         val_loss = evaluate_loss(model, dataloader_val, loss_fn, text_field)
         writer.add_scalar('data/val_loss', val_loss, e)
 
-        log.write_log(' val_loss = %f \n'%val_loss)
+        log.write_log(' val_loss = %f \n' % val_loss)
         log.write_log("\n")
 
         # Validation scores
@@ -382,7 +388,7 @@ if __name__ == '__main__':
         writer.add_scalar('data/val_meteor', scores['METEOR'], e)
         writer.add_scalar('data/val_rouge', scores['ROUGE'], e)
 
-        log.write_log('val_evaluation scores = %s'%str(scores))
+        log.write_log('val_evaluation scores = %s' % str(scores))
         log.write_log("\n")
 
         # Test scores
@@ -395,10 +401,10 @@ if __name__ == '__main__':
         writer.add_scalar('data/test_meteor', scores['METEOR'], e)
         writer.add_scalar('data/test_rouge', scores['ROUGE'], e)
 
-        log.write_log('test_evaluation scores = %s'%str(scores))
+        log.write_log('test_evaluation scores = %s' % str(scores))
         log.write_log("\n")
 
-        log.write_log("************************epoch %d end**************************\n"%e)
+        log.write_log("************************epoch %d end**************************\n" % e)
         log.write_log("**************************************************************\n")
         # Prepare for next epoch
         best = False
