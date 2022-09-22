@@ -106,13 +106,14 @@ class DecoderLayer_Caption(Module):
         self.lnorm2 = nn.LayerNorm(d_model)
         self.pwff = PositionWiseFeedForward(d_model, d_ff, dropout)
 
-    def forward(self, input, enc_output, mask_pad, mask_self_att, mask_enc_att):
+    def forward(self, input, enc_output, box_lastlayer, mask_pad, mask_self_att, mask_enc_att):
         # MHA+AddNorm
         self_att = self.self_att(input, input, input, mask_self_att)
         self_att = self.lnorm1(input + self.dropout1(self_att))
         self_att = self_att * mask_pad
         # MHA+AddNorm
-        enc_att = self.enc_att(self_att, enc_output, enc_output, mask_enc_att)
+        # enc_att = self.enc_att(self_att, enc_output, enc_output, mask_enc_att)
+        enc_att = self.enc_att(self_att, box_lastlayer, box_lastlayer)
         enc_att = self.lnorm2(self_att + self.dropout2(enc_att))
         enc_att = enc_att * mask_pad
         # FFN+AddNorm
@@ -200,7 +201,7 @@ class Decoder_Box(Module):
         if self.aux_outputs:
             out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
 
-        return out
+        return out,tgt#bs,100,d_model
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):
@@ -228,7 +229,7 @@ class Decoder_Caption(Module):
         self.register_state('running_mask_self_attention', torch.zeros((1, 1, 0)).byte())
         self.register_state('running_seq', torch.zeros((1,)).long())
 
-    def forward(self, input, encoder_output, mask_encoder):
+    def forward(self, input, encoder_output, box_lastlayer, mask_encoder):
         # input (b_s, seq_len)
         b_s, seq_len = input.shape[:2]
         mask_queries = (input != self.padding_idx).unsqueeze(-1).float()  # (b_s, seq_len, 1)
@@ -251,7 +252,7 @@ class Decoder_Caption(Module):
         out = self.word_emb(input) + self.pos_emb(seq)
 
         for i, l in enumerate(self.layers):
-            out = l(out, encoder_output, mask_queries, mask_self_attention, mask_encoder)
+            out = l(out, encoder_output, box_lastlayer, mask_queries, mask_self_attention, mask_encoder)
 
         out = self.fc(out)
         return F.log_softmax(out, dim=-1)
@@ -274,6 +275,7 @@ class Transformer(CaptioningModel):
         self.register_state('mask_enc', None)
         # self.register_state('cap_output',None)
         self.register_state('pos', None)
+        self.register_state('box_lastlayer',None)
         # self.aux_loss = aux_loss
         self.build_loss()
 
@@ -307,8 +309,8 @@ class Transformer(CaptioningModel):
     def forward(self, images, seq):
         enc_output, mask_enc, pos = self.encoder(images)
         # dec_output = self.decoder(seq, enc_output, mask_enc)
-        box_output = self.decoder_box(enc_output, mask_enc, pos)
-        cap_output = self.decoder_cap(seq, enc_output, mask_enc)
+        box_output,box_lastlayer = self.decoder_box(enc_output, mask_enc, pos)
+        cap_output = self.decoder_cap(seq, enc_output,box_lastlayer, mask_enc)
         return box_output, cap_output
 
     def forward_box_loss(self, output, target):
@@ -330,6 +332,7 @@ class Transformer(CaptioningModel):
         elif mode == 'feedback':
             if t == 0:
                 self.enc_output, self.mask_enc, self.pos = self.encoder(visual)
+                _,self.box_lastlayer = self.decoder_box(self.enc_output, self.mask_enc, self.pos)
 
                 if isinstance(visual, torch.Tensor):
                     it = visual.data.new_full((visual.shape[0], 1), self.bos_idx).long()
@@ -338,7 +341,7 @@ class Transformer(CaptioningModel):
             else:
                 it = prev_output
 
-        return self.decoder_cap(it, self.enc_output, self.mask_enc)
+        return self.decoder_cap(it, self.enc_output, self.box_lastlayer, self.mask_enc)
 
 
 class SetCriterion(nn.Module):

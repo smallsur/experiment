@@ -38,26 +38,30 @@ class BoxField(RawField):
     def __init__(self,preprocessing=None, postprocessing=None,dect_path = '/media/awen/D/dataset',sc_image_path='/media/awen/D/dataset/rstnet/Datasets/m2_annotations'):
         super(BoxField,self).__init__()
 
-        self.dect = h5py.File(os.path.join(dect_path,'coco_detections.hdf5'),'r')
-        self.scale = load_json(os.path.join(sc_image_path,'image_to_scale.json'))
+        self.dect = h5py.File(os.path.join(dect_path,'coco_detection_simple.hdf5'),'r')
+        # self.scale = load_json(os.path.join(sc_image_path,'image_to_scale.json'))
 
     def preprocess(self, x):
         temp = []
-        cv =[]
+        # cv =[]
+
+        # data = self.dect['%d_boxes'%x][()]
+        # width = self.scale[str(x)]['width']
+        # height = self.scale[str(x)]['height']
+        
+        # for b in data:
+        #     c = [(b[2]+b[0])/(2*width),(b[3]+b[1])/(2*height),(b[2]-b[0])/width,(b[3]-b[1])/height]
+        #     cv.append(c)
+
+        # temp.append(np.array(cv,dtype=np.float32))
+
+        # data = self.dect['%d_cls_prob'%x][()]
+        # temp.append(np.argmax(data,-1).tolist())
 
         data = self.dect['%d_boxes'%x][()]
-        width = self.scale[str(x)]['width']
-        height = self.scale[str(x)]['height']
-        
-        for b in data:
-            c = [(b[2]+b[0])/(2*width),(b[3]+b[1])/(2*height),(b[2]-b[0])/width,(b[3]-b[1])/height]
-            cv.append(c)
-
-        temp.append(np.array(cv,dtype=np.float32))
-
+        temp.append(data)
         data = self.dect['%d_cls_prob'%x][()]
-        temp.append(np.argmax(data,-1).tolist())
-        
+        temp.append(data)
         return temp
 
     def process(self, batch):

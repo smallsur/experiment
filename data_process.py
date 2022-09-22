@@ -4,28 +4,66 @@ import numpy as np
 import pandas as pd
 import json
 import h5py
+import os
+import re
 from tqdm import tqdm
+from data_exp.utils import load_json
 
+# temp = []
+# cv = []
+#
+# data = self.dect['%d_boxes' % x][()]
+# width = self.scale[str(x)]['width']
+# height = self.scale[str(x)]['height']
+#
+# for b in data:
+#     c = [(b[2] + b[0]) / (2 * width), (b[3] + b[1]) / (2 * height), (b[2] - b[0]) / width, (b[3] - b[1]) / height]
+#     cv.append(c)
+#
+# temp.append(np.array(cv, dtype=np.float32))
+#
+# data = self.dect['%d_cls_prob' % x][()]
+# temp.append(np.argmax(data, -1).tolist())
 
-# fy = h5py.File('/media/awen/D/dataset/rstnet/coco_detections.hdf5','a')
-
+fy = h5py.File('/media/awen/D/dataset/rstnet/coco_detections.hdf5', 'r')
+fy_new = h5py.File('/media/awen/D/dataset/rstnet/coco_detection_simple.hdf5', 'r')
+scale = load_json(os.path.join('/media/awen/D/dataset/rstnet/Datasets/m2_annotations', 'image_to_scale.json'))
+print(len(fy_new.keys()))
 # print(f.keys())
-# for k in fy.keys():
-    # if '_features' in k:
-    #     fy.__delitem__(k)
-    # print(k)
+# with tqdm(desc='del', unit='i', total=len(fy.keys())) as pbar:
+#     for i, k in enumerate(fy.keys()):
+#         image_id = re.search('\d*',k).group()
+
+#         if '_box' in k:
+#             cv = []
+#             data = fy[k][()]
+#             width = scale[image_id]['width']
+#             height = scale[image_id]['height']
+#             for b in data:
+#                 c = [(b[2] + b[0]) / (2 * width), (b[3] + b[1]) / (2 * height), (b[2] - b[0]) / width, (b[3] - b[1]) / height]
+#                 cv.append(c)
+
+#             fy_new[k] = np.array(cv, dtype=np.float32)
+
+#         if '_cls_prob' in k:
+
+#             data = fy[k][()]
+
+#             fy_new[k] = np.argmax(data, -1).tolist()
+#         pbar.update()
+
 
 
 # caption_train=None
 # caption_val=None
 # ins_train=None
 # ins_val=None
-with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/captions_train2014.json','r') as f:
-    caption_train = json.load(f)#image = 82783 ann = 414113
+# with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/captions_train2014.json','r') as f:
+#     caption_train = json.load(f)#image = 82783 ann = 414113
 
 
-with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/captions_val2014.json','r') as f:
-    caption_val = json.load(f)#image = 40504 ann = 202654
+# with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/captions_val2014.json','r') as f:
+#     caption_val = json.load(f)#image = 40504 ann = 202654
 
 # with open('/media/awen/D/dataset/coco_2014/annotations/instances_train2014.json','r') as f:
 #     ins_train = json.load(f)#82783 604907
@@ -38,17 +76,17 @@ with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/captions_val2014
 # test_examples ={}
 # imageid_to_id = {}
 # imageid_to_id_box = {}
-image_to_scale = {}
-for data in [caption_train,caption_val]:
+# image_to_scale = {}
+# for data in [caption_train,caption_val]:
 
-    for item in data.get('images'):
-        image_id = item['id']
-        height = item['height']
-        width = item['width']
-        image_to_scale[image_id] ={'height':height, 'width':width}
+#     for item in data.get('images'):
+#         image_id = item['id']
+#         height = item['height']
+#         width = item['width']
+#         image_to_scale[image_id] ={'height':height, 'width':width}
 
-with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/image_to_scale.json','w+') as f:
-    json.dump(image_to_scale, f)
+# with open('/media/awen/D/dataset/rstnet/Datasets/m2_annotations/image_to_scale.json','w+') as f:
+#     json.dump(image_to_scale, f)
 
 #     for item in data.get('annotations'):
 #         examples[item['id']] = {'image_id':item['image_id'],'caption':item['caption']}
