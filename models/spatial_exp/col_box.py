@@ -18,8 +18,8 @@ num_classes = 1601
 
 #  args.hidden_dim,args.lr_backbone,
 def col_box(args):
-    encoder = MultiLevelEncoder_Box(6, padding_idx=0)
-    decoder_box = Decoder_Box(6, aux_outputs=args.aux_outputs)
+    encoder = MultiLevelEncoder_Box(3, padding_idx=0)
+    decoder_box = Decoder_Box(3, aux_outputs=args.aux_outputs)
     decoder_cap = Decoder_Caption(10201, 54, 3, 1)
     return Transformer(2, encoder, decoder_box, decoder_cap)
 

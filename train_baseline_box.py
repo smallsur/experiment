@@ -104,10 +104,10 @@ def train_xe(model, dataloader, optim, text_field):
             cap_out = cap_out[:, :-1].contiguous()
             loss_cap = loss_fn(cap_out.view(-1, len(text_field.vocab)), captions_gt.view(-1))
 
-            loss_box = model.forward_box_loss(box_out,targets)
+            # loss_box = model.forward_box_loss(box_out,targets)
             
-            loss = args.norm_r * loss_box + (1-args.norm_r) * loss_cap
-
+            # loss = args.norm_r * loss_box + (1-args.norm_r) * loss_cap
+            loss = loss_cap
             optim.zero_grad()
             loss.backward()
 
@@ -178,8 +178,8 @@ if __name__ == '__main__':
     device = torch.device('cuda')
     parser = argparse.ArgumentParser(description='Experiment_Train')
     parser.add_argument('--exp_name', type=str, default='Experiment')
-    parser.add_argument('--batch_size', type=int, default=5)
-    parser.add_argument('--workers', type=int, default=4)
+    parser.add_argument('--batch_size', type=int, default=25)
+    parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--m', type=int, default=40)
     parser.add_argument('--head', type=int, default=8)
     parser.add_argument('--warmup', type=int, default=10000)
@@ -210,7 +210,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=int, default=3)
     parser.add_argument('--web', type=bool, default=False)
     parser.add_argument('--gpu_id', type=int, default=0)
-    parser.add_argument('--aux_outputs', type=bool, default=True)
+    parser.add_argument('--aux_outputs', type=bool, default=False)
 
     args = parser.parse_args()
 
