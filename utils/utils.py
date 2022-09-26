@@ -40,7 +40,7 @@ def del_cache():
         # print(dirs)
         # print(files)
         for dir in dirs:
-            if dir=="__pycache__":
+            if dir=="__pycache__" or dir=='detection-results' or dir=='ground-truth':
                 path_cache.append(os.path.join(root,dir))
                 
     

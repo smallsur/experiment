@@ -1,5 +1,6 @@
 from re import I
 import torch
+import os
 import torch.nn.functional as F
 from torch import nn
 
@@ -12,7 +13,7 @@ from models.transformer.utils import PositionWiseFeedForward
 from models.captioning_model import CaptioningModel
 from .matcher import build_matcher
 from utils import box_cxcywh_to_xyxy, generalized_box_iou, is_dist_avail_and_initialized, get_world_size, accuracy
-
+from .evalue_box import evalue_box
 num_classes = 1601
 
 
@@ -99,11 +100,17 @@ class DecoderLayer_Caption(Module):
 
         self.self_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=True)
         self.enc_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=False)
+        self.box_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=False)
+
         self.dropout1 = nn.Dropout(dropout)
         self.lnorm1 = nn.LayerNorm(d_model)
 
         self.dropout2 = nn.Dropout(dropout)
         self.lnorm2 = nn.LayerNorm(d_model)
+
+        self.dropout3 = nn.Dropout(dropout)
+        self.lnorm3 = nn.LayerNorm(d_model)
+
         self.pwff = PositionWiseFeedForward(d_model, d_ff, dropout)
 
     def forward(self, input, enc_output, box_lastlayer, mask_pad, mask_self_att, mask_enc_att):
@@ -111,13 +118,18 @@ class DecoderLayer_Caption(Module):
         self_att = self.self_att(input, input, input, mask_self_att)
         self_att = self.lnorm1(input + self.dropout1(self_att))
         self_att = self_att * mask_pad
+
         # MHA+AddNorm
         # enc_att = self.enc_att(self_att, enc_output, enc_output, mask_enc_att)
-        enc_att = self.enc_att(self_att, box_lastlayer, box_lastlayer)
+        enc_att = self.enc_att(self_att, enc_output, enc_output,mask_enc_att)
         enc_att = self.lnorm2(self_att + self.dropout2(enc_att))
         enc_att = enc_att * mask_pad
         # FFN+AddNorm
-        ff = self.pwff(enc_att)
+        box_att = self.box_att(enc_att,box_lastlayer,box_lastlayer)
+        box_att = self.lnorm3(enc_att + self.dropout3(box_att))
+        box_att = box_att * mask_pad
+
+        ff = self.pwff(box_att)
         ff = ff * mask_pad
         return ff
 
@@ -278,6 +290,7 @@ class Transformer(CaptioningModel):
         self.register_state('box_lastlayer',None)
         # self.aux_loss = aux_loss
         self.build_loss()
+        self.postProcess = PostProcess()
 
         self.init_weights()
 
@@ -306,10 +319,12 @@ class Transformer(CaptioningModel):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, images, seq):
+    def forward(self, images, seq, only_box = False):
         enc_output, mask_enc, pos = self.encoder(images)
         # dec_output = self.decoder(seq, enc_output, mask_enc)
         box_output,box_lastlayer = self.decoder_box(enc_output, mask_enc, pos)
+        if only_box:
+            return box_output
         cap_output = self.decoder_cap(seq, enc_output,box_lastlayer, mask_enc)
         return box_output, cap_output
 
@@ -324,6 +339,44 @@ class Transformer(CaptioningModel):
     def init_state(self, b_s, device):
         return [torch.zeros((b_s, 0), dtype=torch.long, device=device),
                 None, None]
+    
+    def dump_dt(self,output,ids,sizes):
+        path_root = os.getcwd()
+        results = self.postProcess(output, sizes)
+
+        for i,id in enumerate(ids):
+            with open(os.path.join(path_root,'input','detection-results','%s.txt'%id), 'w') as f:
+                result = results[i]
+                s = result['scores']
+                l = result['labels']
+                b = result['boxes']
+                for k in range(100):
+                    s1 = s[k]
+                    l1 = l[k]
+                    x1,y1,x2,y2 = b[k]
+                    f.write(str(int(l1))+' '+str(float(s1))+' '+str(float(x1))+' '+str(float(y1))+' '+str(float(x2))+' '+str(float(y2))+'\n')
+        
+
+    def evalue_box_(self,args):
+        return evalue_box(args)
+    
+    def dump_gt(self,target,boxfeild):
+        path_root = os.getcwd()
+        sizes = []
+        ids = []
+        for t in target:
+            id = t['id']
+            with open(os.path.join(path_root,'input','ground-truth','%s.txt'%id), 'w') as f:
+                boxes = t['boxes']
+                labels = t['labels']
+                boxes,size= boxfeild.xyxy_to_xywh(id,boxes)
+                sizes.append(size)
+                for label,box in zip(labels,boxes):
+                    x1,y1,x2,y2 = box
+                    f.write(str(int(label))+' '+str(float(x1))+' '+str(float(y1))+' '+str(float(x2))+' '+str(float(y2))+'\n')
+            ids.append(id)
+        return ids,sizes
+                
 
     def step(self, t, prev_output, visual, seq, mode='teacher_forcing', **kwargs):
         it = None
@@ -345,6 +398,7 @@ class Transformer(CaptioningModel):
 
 
 class SetCriterion(nn.Module):
+
 
     def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses):
         """ Create the criterion.
@@ -483,3 +537,31 @@ class SetCriterion(nn.Module):
                     losses.update(l_dict)
 
         return losses
+
+
+
+class PostProcess(nn.Module):
+
+    @torch.no_grad()
+    def forward(self, outputs, target_sizes):
+
+        out_logits, out_bbox = outputs['pred_logits'], outputs['pred_boxes']
+        target_sizes = torch.tensor(target_sizes, dtype=torch.long,device=out_logits.device)
+        assert len(out_logits) == len(target_sizes)
+        assert target_sizes.shape[1] == 2
+
+        prob = F.softmax(out_logits, -1)
+        scores, labels = prob[..., :-1].max(-1)
+
+        # convert to [x0, y0, x1, y1] format
+        boxes = box_cxcywh_to_xyxy(out_bbox)
+        # and from relative [0, 1] to absolute [0, height] coordinates
+        img_h, img_w = target_sizes.unbind(1)
+        scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
+        boxes = boxes * scale_fct[:, None, :]
+
+        results = [{'scores': s, 'labels': l, 'boxes': b} for s, l, b in zip(scores, labels, boxes)]
+
+        return results
+
+

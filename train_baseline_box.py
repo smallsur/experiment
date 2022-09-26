@@ -25,6 +25,8 @@ from utils import Logger
 
 import models.spatial_exp
 from models.build import BuildModel
+from models.spatial_exp.evalue_box import evalue_box
+# from utils.box_ops import box_cxcywh_to_xyxy
 
 random.seed(1234)
 torch.manual_seed(1234)
@@ -49,8 +51,13 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
         with torch.no_grad():
             for it, (detections,targets, captions) in enumerate(dataloader):
                 detections, captions = detections.to(device), captions.to(device)
-                targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+
+                if e == 0:#在第一个周期生成ground-truth
+                    ids,sizes = model.dump_gt(targets,boxfield)
+                
+                targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
                 box_out,cap_out = model(detections, captions)
+                model.dump_dt(box_out,ids,sizes)
                 captions_gt = captions[:, 1:].contiguous()
                 cap_out = cap_out[:, :-1].contiguous()
                 loss_cap = loss_fn(cap_out.view(-1, len(text_field.vocab)), captions_gt.view(-1))
@@ -59,9 +66,10 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
 
                 pbar.set_postfix(loss=running_loss / (it + 1))
                 pbar.update()
-
+    
+    mAP = model.evalue_box_(args)
     val_loss = running_loss / len(dataloader)
-    return val_loss
+    return val_loss,mAP
 
 
 def evaluate_metrics(model, dataloader, text_field):
@@ -96,18 +104,19 @@ def train_xe(model, dataloader, optim, text_field):
     running_loss = .0
     with tqdm(desc='Epoch %d - train' % e, unit='it', total=len(dataloader)) as pbar:#x1,y1,x2,y12
         for it, (detections, targets, captions) in enumerate(dataloader):
-            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
             detections,  captions = detections.to(device), captions.to(device) #batch len dim ,batch*
-            box_out,cap_out = model(detections, captions)
+
+            box_out,cap_out = model(detections, captions)#25,100,4 /// 25,100,1602
 
             captions_gt = captions[:, 1:].contiguous()
             cap_out = cap_out[:, :-1].contiguous()
             loss_cap = loss_fn(cap_out.view(-1, len(text_field.vocab)), captions_gt.view(-1))
 
-            # loss_box = model.forward_box_loss(box_out,targets)
+            loss_box = model.forward_box_loss(box_out,targets)
             
-            # loss = args.norm_r * loss_box + (1-args.norm_r) * loss_cap
-            loss = loss_cap
+            loss = args.norm_r * loss_box + (1-args.norm_r) * loss_cap
+            # loss = loss_cap
             optim.zero_grad()
             loss.backward()
 
@@ -144,8 +153,14 @@ def train_scst(model, dataloader, optim, cider, text_field):
     with tqdm(desc='Epoch %d - train' % e, unit='it', total=len(dataloader)) as pbar:
         for it, (detections,targets, caps_gt) in enumerate(dataloader):
             detections = detections.to(device)
+            targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets] if args.box_in_lr else targets
             outs, log_probs = model.beam_search(detections, seq_len, text_field.vocab.stoi['<eos>'],
                                                 beam_size, out_size=beam_size)
+            if args.box_in_lr:
+                box_out = model(detections, caps_gt, only_box = True)
+
+                loss_box = model.forward_box_loss(box_out,targets)
+            
             optim.zero_grad()
 
             # Rewards
@@ -158,6 +173,9 @@ def train_scst(model, dataloader, optim, cider, text_field):
             loss = -torch.mean(log_probs, -1) * (reward - reward_baseline)
 
             loss = loss.mean()
+
+            if args.box_in_lr:
+                loss = loss + loss_box * 0.1 * args.norm_r
             loss.backward()
             optim.step()
 
@@ -203,7 +221,15 @@ if __name__ == '__main__':
     parser.add_argument('--refine_epoch_rl', type=int, default=28)
     parser.add_argument('--xe_base_lr', type=float, default=0.0001)
     parser.add_argument('--rl_base_lr', type=float, default=5e-6)
-    parser.add_argument('--norm_r', type=float, default=0.25)
+    parser.add_argument('--norm_r', type=float, default=0.5)
+    #evalue_box
+    parser.add_argument('-na', '--no-animation', help="no animation is shown.", default=True)
+    parser.add_argument('-np', '--no-plot', help="no plot is shown.", default=True)
+    parser.add_argument('-q', '--quiet', help="minimalistic console output.", action="store_true")
+    # argparse receiving list of classes to be ignored (e.g., python main.py --ignore person book)
+    parser.add_argument('-i', '--ignore', nargs='+', type=str, help="ignore a list of classes.")
+    # argparse receiving list of classes with specific IoU (e.g., python main.py --set-class-iou person 0.7)
+    parser.add_argument('--set-class-iou', nargs='+', type=str, help="set IoU for a specific class.")
 
     #参数调整
     parser.add_argument('--id', type=str, default='default')
@@ -211,6 +237,7 @@ if __name__ == '__main__':
     parser.add_argument('--web', type=bool, default=False)
     parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--aux_outputs', type=bool, default=False)
+    parser.add_argument('--box_in_lr', type=bool, default=False)
 
     args = parser.parse_args()
 
@@ -247,7 +274,7 @@ if __name__ == '__main__':
     text_field.vocab = pickle.load(open(args.path_vocab, 'rb'))
 
     #build dataset,dataloader
-    datasets, datasets_evalue = Build_DataSet(args=args, text_field=text_field)
+    datasets, datasets_evalue,boxfield = Build_DataSet(args=args, text_field=text_field)
 
     #build model
     model = BuildModel.build(args.model, args).to(device)
@@ -354,7 +381,7 @@ if __name__ == '__main__':
 
         log.write_log('epoch%d:\n' % e)
 
-        if  not  use_rl:
+        if  not use_rl:
             train_loss = train_xe(model, dataloader_train, optim, text_field)
             writer.add_scalar('data/train_loss', train_loss, e)
             log.write_log('state = %s \n' % 'base_train')
@@ -372,9 +399,12 @@ if __name__ == '__main__':
 
         
         # Validation loss
-        val_loss = evaluate_loss(model, dataloader_val, loss_fn, text_field)
+        val_loss ,mAP= evaluate_loss(model, dataloader_val, loss_fn, text_field)
         writer.add_scalar('data/val_loss', val_loss, e)
+        writer.add_scalar('data/mAP', mAP, e)
 
+        print(' mAP = %f \n' % mAP)
+        log.write_log(' mAP = %f \n' % mAP)
         log.write_log(' val_loss = %f \n' % val_loss)
         log.write_log("\n")
 
@@ -384,7 +414,7 @@ if __name__ == '__main__':
         val_cider = scores['CIDEr']
         writer.add_scalar('data/val_cider', val_cider, e)
         writer.add_scalar('data/val_bleu1', scores['BLEU'][0], e)
-        writer.add_scalar('data/val_bleu4', scores['BLEU'][3], e)
+        writer.add_scalar('data/val_bleu4', scores['BLEU'][3], e) 
         writer.add_scalar('data/val_meteor', scores['METEOR'], e)
         writer.add_scalar('data/val_rouge', scores['ROUGE'], e)
 

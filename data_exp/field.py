@@ -39,7 +39,7 @@ class BoxField(RawField):
         super(BoxField,self).__init__()
 
         self.dect = h5py.File(os.path.join(dect_path,'coco_detection_simple.hdf5'),'r')
-        # self.scale = load_json(os.path.join(sc_image_path,'image_to_scale.json'))
+        self.scale = load_json(os.path.join(sc_image_path,'image_to_scale.json'))
 
     def preprocess(self, x):
         temp = []
@@ -62,19 +62,28 @@ class BoxField(RawField):
         temp.append(data)
         data = self.dect['%d_cls_prob'%x][()]
         temp.append(data)
-        return temp
+        return {'id':x,'data':temp}
 
     def process(self, batch):
         batchs = []
         for ba in batch:
-            boxes =  default_collate(ba[0])
-            labels = default_collate(ba[1])
-            batchs.append({'boxes':boxes,'labels':labels})
+            boxes = default_collate(ba['data'][0])
+            labels = default_collate(ba['data'][1])
+            batchs.append({'id':ba['id'],'boxes':boxes,'labels':labels})
 
         return batchs
 
-    # def xyxy_to_xywh(self,box):
+    def xyxy_to_xywh(self,id,boxes):
 
+        width = self.scale[str(id)]['width']
+        height = self.scale[str(id)]['height']
+
+        x_c, y_c, w, h = boxes.unbind(-1)
+        b = [((x_c - 0.5 * w) * width), ((y_c - 0.5 * h) * height),
+            ((x_c + 0.5 * w) * width), ((y_c + 0.5 * h) * height)]
+
+        return torch.stack(b, dim=-1),[width, height]
+            
 
 
 

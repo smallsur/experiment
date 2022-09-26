@@ -18,7 +18,7 @@ def Build_DataSet(args,text_field):
     datasets = coco.get_dataset()
     datasets_evalue = coco.get_evalue_dataset()
 
-    return  datasets,datasets_evalue
+    return  datasets,datasets_evalue,box_field
 
 
     
