@@ -39,6 +39,7 @@ class BoxField(RawField):
         super(BoxField,self).__init__()
 
         self.dect = h5py.File(os.path.join(dect_path,'coco_detection_simple.hdf5'),'r')
+        
         self.scale = load_json(os.path.join(sc_image_path,'image_to_scale.json'))
 
     def preprocess(self, x):
@@ -57,7 +58,7 @@ class BoxField(RawField):
 
         # data = self.dect['%d_cls_prob'%x][()]
         # temp.append(np.argmax(data,-1).tolist())
-
+ 
         data = self.dect['%d_boxes'%x][()]
         temp.append(data)
         data = self.dect['%d_cls_prob'%x][()]

@@ -1,6 +1,8 @@
 import requests
 import os
 import sys
+import time
+
 def download_from_url(url, path):
     """Download file, with logic (from tensor2tensor) for Google Drive"""
     if 'drive.google.com' not in url:
@@ -49,7 +51,15 @@ def del_cache():
             os.remove(os.path.join(dir,file))
 
 
- 
+def cost_time(func):
+    def fun(*args, **kwargs):
+        t = time.perf_counter()
+        result = func(*args, **kwargs)
+        print(f'func {func.__name__} cost time:{time.perf_counter() - t:.8f} s')
+        return result
+
+    return fun
+
 
 # if __name__ == '__main__':
 #     del_cache()

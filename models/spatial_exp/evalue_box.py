@@ -8,6 +8,8 @@ import sys
 import math
 import numpy as np
 
+from utils import cost_time
+
 MINOVERLAP = 0.5 # default value (defined in the PASCAL VOC2012 challenge)
 
 # parser = argparse.ArgumentParser()
@@ -31,6 +33,7 @@ MINOVERLAP = 0.5 # default value (defined in the PASCAL VOC2012 challenge)
   (height)            *
                 (Right,Bottom)
 '''
+@cost_time
 def evalue_box(args):
     # if there are no classes to ignore then replace None by empty list
     if args.ignore is None:
@@ -223,17 +226,17 @@ def evalue_box(args):
     """
     Plot - adjust axes
     """
-    def adjust_axes(r, t, fig, axes):
-        # get text width for re-scaling
-        bb = t.get_window_extent(renderer=r)
-        text_width_inches = bb.width / fig.dpi
-        # get axis width in inches
-        current_fig_width = fig.get_figwidth()
-        new_fig_width = current_fig_width + text_width_inches
-        propotion = new_fig_width / current_fig_width
-        # get axis limit
-        x_lim = axes.get_xlim()
-        axes.set_xlim([x_lim[0], x_lim[1]*propotion])
+    # def adjust_axes(r, t, fig, axes):
+    #     # get text width for re-scaling
+    #     bb = t.get_window_extent(renderer=r)
+    #     text_width_inches = bb.width / fig.dpi
+    #     # get axis width in inches
+    #     current_fig_width = fig.get_figwidth()
+    #     new_fig_width = current_fig_width + text_width_inches
+    #     propotion = new_fig_width / current_fig_width
+    #     # get axis limit
+    #     x_lim = axes.get_xlim()
+    #     axes.set_xlim([x_lim[0], x_lim[1]*propotion])
 
     """
     Draw plot using Matplotlib
@@ -728,7 +731,7 @@ def evalue_box(args):
         mAP = sum_AP / n_classes
         text = "mAP = {0:.2f}%".format(mAP*100)
         output_file.write(text + "\n")
-        print(text)
+        # print(text)
 
     """
     Draw false negatives
@@ -752,15 +755,19 @@ def evalue_box(args):
     #                 bbgt = [ int(round(float(x))) for x in obj["bbox"].split() ]
     #                 cv2.rectangle(img,(bbgt[0],bbgt[1]),(bbgt[2],bbgt[3]),pink,2)
     #         cv2.imwrite(img_cumulative_path, img)
-
     # remove the temp_files directory
+
     shutil.rmtree(TEMP_FILES_PATH)
+
     if os.path.exists(DR_PATH): # if it exist already
         # reset the output directory
+        
         shutil.rmtree(DR_PATH)
+        shutil.rmtree(GT_PATH)
 
     os.makedirs(DR_PATH)
-    
+    os.makedirs(GT_PATH)
+
     return mAP*100
 
     """

@@ -52,8 +52,8 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
             for it, (detections,targets, captions) in enumerate(dataloader):
                 detections, captions = detections.to(device), captions.to(device)
 
-                if e == 0:#在第一个周期生成ground-truth
-                    ids,sizes = model.dump_gt(targets,boxfield)
+                # if e == 0:#在第一个周期生成ground-truth
+                ids,sizes = model.dump_gt(targets,boxfield)
                 
                 targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
                 box_out,cap_out = model(detections, captions)
@@ -66,8 +66,9 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
 
                 pbar.set_postfix(loss=running_loss / (it + 1))
                 pbar.update()
-    
-    mAP = model.evalue_box_(args)
+    mAP = 0
+    if e % 4 == 0:
+        mAP = model.evalue_box_(args)
     val_loss = running_loss / len(dataloader)
     return val_loss,mAP
 
@@ -159,11 +160,14 @@ def train_scst(model, dataloader, optim, cider, text_field):
             if args.box_in_lr:
                 box_out = model(detections, caps_gt, only_box = True)
 
-                loss_box = model.forward_box_loss(box_out,targets)
+                
             
             optim.zero_grad()
 
             # Rewards
+            if args.box_in_lr:
+                loss_box = model.forward_box_loss(box_out,targets)
+
             caps_gen = text_field.decode(outs.view(-1, seq_len))
             caps_gt = list(itertools.chain(*([c, ] * beam_size for c in caps_gt)))
             caps_gen, caps_gt = tokenizer_pool.map(evaluation.PTBTokenizer.tokenize, [caps_gen, caps_gt])
@@ -184,6 +188,7 @@ def train_scst(model, dataloader, optim, cider, text_field):
             running_reward_baseline += reward_baseline.mean().item()
             pbar.set_postfix(loss=running_loss / (it + 1), reward=running_reward / (it + 1),
                              reward_baseline=running_reward_baseline / (it + 1))
+
             pbar.update()
 
     loss = running_loss / len(dataloader)
@@ -213,6 +218,7 @@ if __name__ == '__main__':
     parser.add_argument('--dect_path', type=str, default='')
 
     parser.add_argument('--path_prefix',type=str,default='/media/awen/D/dataset/rstnet')
+    #/media/a100202/ccc739a0-163b-4b54-b335-f12f0d52de59/zhangawen/dataset/rstnet
     parser.add_argument('--path_prefix_web',type=str,default='/media/a1002/8b95f0e0-6f6d-4dcb-a09a-a0272b8be2b7/zhangawen/rstnet')
     parser.add_argument('--path_vocab',type=str,default='vocab.pkl')
     
@@ -278,8 +284,10 @@ if __name__ == '__main__':
 
     #build model
     model = BuildModel.build(args.model, args).to(device)
+
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('\n model size: %d\n' % n_parameters)
+
     ref_caps_train = list(datasets['train'].text)
     cider_train = Cider(PTBTokenizer.tokenize(ref_caps_train))
 
@@ -369,11 +377,11 @@ if __name__ == '__main__':
     for e in range(start_epoch, start_epoch + 100):
 
         dataloader_train = DataLoader(dataset=datasets['train'], collate_fn=datasets['train'].collate_fn(),
-                                      batch_size=args.batch_size, shuffle=True,num_workers=args.workers)
+                                      batch_size=args.batch_size, shuffle=True,num_workers=args.workers,pin_memory=True)
         dataloader_val = DataLoader(dataset=datasets['val'], collate_fn=datasets['val'].collate_fn(),
                                     batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
         dict_dataloader_train = DataLoader(dataset=datasets_evalue['e_train'], collate_fn=datasets_evalue['e_train'].collate_fn(),
-                                           batch_size=args.batch_size//5, shuffle=True, num_workers=args.workers)
+                                           batch_size=args.batch_size//5, shuffle=True, num_workers=args.workers,pin_memory=True)
         dict_dataloader_val = DataLoader(dataset=datasets_evalue['e_val'], collate_fn=datasets_evalue['e_val'].collate_fn(),
                                          batch_size=args.batch_size//5, shuffle=False, num_workers=args.workers)
         dict_dataloader_test = DataLoader(dataset=datasets_evalue['e_test'], collate_fn=datasets_evalue['e_test'].collate_fn(),
