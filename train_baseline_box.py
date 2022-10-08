@@ -265,7 +265,7 @@ if __name__ == '__main__':
     print(args)
     print('The Training of Experiment')
 
-    writer = SummaryWriter(log_dir=os.path.join(args.logs_folder, args.exp_name))
+    # writer = SummaryWriter(log_dir=os.path.join(args.logs_folder, args.exp_name))
 
 
     #init textlog
@@ -391,15 +391,15 @@ if __name__ == '__main__':
 
         if  not use_rl:
             train_loss = train_xe(model, dataloader_train, optim, text_field)
-            writer.add_scalar('data/train_loss', train_loss, e)
+            # writer.add_scalar('data/train_loss', train_loss, e)
             log.write_log('state = %s \n' % 'base_train')
             log.write_log(' train_loss = %f \n' % train_loss)
             
         else:
             train_loss, reward, reward_baseline = train_scst(model, dict_dataloader_train, optim_rl, cider_train, text_field)
-            writer.add_scalar('data/train_loss', train_loss, e)
-            writer.add_scalar('data/reward', reward, e)
-            writer.add_scalar('data/reward_baseline', reward_baseline, e)
+            # writer.add_scalar('data/train_loss', train_loss, e)
+            # writer.add_scalar('data/reward', reward, e)
+            # writer.add_scalar('data/reward_baseline', reward_baseline, e)
             log.write_log('state = %s \n' % 'rl_train')
             log.write_log(' train_loss = %f \n'%train_loss)
             log.write_log(' reword = %f \n' % reward)
@@ -408,8 +408,8 @@ if __name__ == '__main__':
         
         # Validation loss
         val_loss ,mAP= evaluate_loss(model, dataloader_val, loss_fn, text_field)
-        writer.add_scalar('data/val_loss', val_loss, e)
-        writer.add_scalar('data/mAP', mAP, e)
+        # writer.add_scalar('data/val_loss', val_loss, e)
+        # writer.add_scalar('data/mAP', mAP, e)
 
         print(' mAP = %f \n' % mAP)
         log.write_log(' mAP = %f \n' % mAP)
@@ -420,11 +420,11 @@ if __name__ == '__main__':
         scores = evaluate_metrics(model, dict_dataloader_val, text_field)
         print("Validation scores", scores)
         val_cider = scores['CIDEr']
-        writer.add_scalar('data/val_cider', val_cider, e)
-        writer.add_scalar('data/val_bleu1', scores['BLEU'][0], e)
-        writer.add_scalar('data/val_bleu4', scores['BLEU'][3], e) 
-        writer.add_scalar('data/val_meteor', scores['METEOR'], e)
-        writer.add_scalar('data/val_rouge', scores['ROUGE'], e)
+        # writer.add_scalar('data/val_cider', val_cider, e)
+        # writer.add_scalar('data/val_bleu1', scores['BLEU'][0], e)
+        # writer.add_scalar('data/val_bleu4', scores['BLEU'][3], e) 
+        # writer.add_scalar('data/val_meteor', scores['METEOR'], e)
+        # writer.add_scalar('data/val_rouge', scores['ROUGE'], e)
 
         log.write_log('val_evaluation scores = %s' % str(scores))
         log.write_log("\n")
@@ -433,11 +433,11 @@ if __name__ == '__main__':
         scores = evaluate_metrics(model, dict_dataloader_test, text_field)
         print("Test scores", scores)
         test_cider = scores['CIDEr']
-        writer.add_scalar('data/test_cider', test_cider, e)
-        writer.add_scalar('data/test_bleu1', scores['BLEU'][0], e)
-        writer.add_scalar('data/test_bleu4', scores['BLEU'][3], e)
-        writer.add_scalar('data/test_meteor', scores['METEOR'], e)
-        writer.add_scalar('data/test_rouge', scores['ROUGE'], e)
+        # writer.add_scalar('data/test_cider', test_cider, e)
+        # writer.add_scalar('data/test_bleu1', scores['BLEU'][0], e)
+        # writer.add_scalar('data/test_bleu4', scores['BLEU'][3], e)
+        # writer.add_scalar('data/test_meteor', scores['METEOR'], e)
+        # writer.add_scalar('data/test_rouge', scores['ROUGE'], e)
 
         log.write_log('test_evaluation scores = %s' % str(scores))
         log.write_log("\n")
@@ -535,5 +535,5 @@ if __name__ == '__main__':
 #             copyfile(os.path.join(args.dir_to_save_model, '%s_last.pth' % args.exp_name), os.path.join(args.dir_to_save_model, '{}_{}.pth'.format(args.exp_name, e)))
 
         if exit_train:
-            writer.close()
+            # writer.close()
             break

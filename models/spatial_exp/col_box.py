@@ -13,7 +13,8 @@ from models.transformer.utils import PositionWiseFeedForward
 from models.captioning_model import CaptioningModel
 from .matcher import build_matcher
 from utils import box_cxcywh_to_xyxy, generalized_box_iou, is_dist_avail_and_initialized, get_world_size, accuracy
-from .evalue_box import evalue_box
+from .evalue_box import evalue_box\
+
 num_classes = 1601
 
 
@@ -95,12 +96,12 @@ class DecoderLayer_Box(Module):
 
 
 class DecoderLayer_Caption(Module):
-    def __init__(self, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1):
+    def __init__(self, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1 , incor = 'concat'):
         super(DecoderLayer_Caption, self).__init__()
 
         self.self_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=True)
         self.enc_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=False)
-        self.box_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=False)
+        # self.box_att = MultiHeadAttention(d_model, d_k, d_v, h, dropout, can_be_stateful=False)
 
         self.dropout1 = nn.Dropout(dropout)
         self.lnorm1 = nn.LayerNorm(d_model)
@@ -108,28 +109,37 @@ class DecoderLayer_Caption(Module):
         self.dropout2 = nn.Dropout(dropout)
         self.lnorm2 = nn.LayerNorm(d_model)
 
-        self.dropout3 = nn.Dropout(dropout)
-        self.lnorm3 = nn.LayerNorm(d_model)
+        # self.dropout3 = nn.Dropout(dropout)
+        # self.lnorm3 = nn.LayerNorm(d_model)
 
         self.pwff = PositionWiseFeedForward(d_model, d_ff, dropout)
+        self.cross_ = incor
 
     def forward(self, input, enc_output, box_lastlayer, mask_pad, mask_self_att, mask_enc_att):
-        # MHA+AddNorm
+
         self_att = self.self_att(input, input, input, mask_self_att)
         self_att = self.lnorm1(input + self.dropout1(self_att))
         self_att = self_att * mask_pad
 
-        # MHA+AddNorm
         # enc_att = self.enc_att(self_att, enc_output, enc_output, mask_enc_att)
-        enc_att = self.enc_att(self_att, enc_output, enc_output,mask_enc_att)
+
+        cross_ = enc_output
+        if self.cross_ == 'concat':
+            cross_ = torch.concat([enc_output,box_lastlayer],dim=-2)
+            box_mask = (torch.sum(box_lastlayer, -1) == 0).unsqueeze(1).unsqueeze(1)
+
+            mask_enc_att = torch.concat([mask_enc_att, box_mask],dim = -1)
+
+
+        enc_att = self.enc_att(self_att, cross_, cross_,mask_enc_att)
         enc_att = self.lnorm2(self_att + self.dropout2(enc_att))
         enc_att = enc_att * mask_pad
-        # FFN+AddNorm
-        box_att = self.box_att(enc_att,box_lastlayer,box_lastlayer)
-        box_att = self.lnorm3(enc_att + self.dropout3(box_att))
-        box_att = box_att * mask_pad
 
-        ff = self.pwff(box_att)
+        # box_att = self.box_att(enc_att,box_lastlayer,box_lastlayer)
+        # box_att = self.lnorm3(enc_att + self.dropout3(box_att))
+        # box_att = box_att * mask_pad
+
+        ff = self.pwff(enc_att)
         ff = ff * mask_pad
         return ff
 
