@@ -1,0 +1,4 @@
+#mid file in py running
+*.pyc
+#evalue file in box
+*.txt
