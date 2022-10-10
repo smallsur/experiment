@@ -437,8 +437,8 @@ def evalue_box(args):
             rounded_prec = [ '%.2f' % elem for elem in prec ]
             rounded_rec = [ '%.2f' % elem for elem in rec ]
             output_file.write(text + "\n Precision: " + str(rounded_prec) + "\n Recall :" + str(rounded_rec) + "\n\n")
-            if not args.quiet:
-                print(text)
+            # if not args.quiet:
+            #     print(text)
             ap_dictionary[class_name] = ap
 
             n_images = counter_images_per_class[class_name]

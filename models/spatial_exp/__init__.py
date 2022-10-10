@@ -6,3 +6,4 @@ from .col_left_one import *
 from .col_lr_two import *
 from .col_box import *
 from .col_box2 import *
+from .col_box3 import *

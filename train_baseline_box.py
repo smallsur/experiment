@@ -217,7 +217,7 @@ if __name__ == '__main__':
     parser.add_argument('--path_txtlog',type=str,default='log')
     parser.add_argument('--dect_path', type=str, default='')
 
-    parser.add_argument('--path_prefix',type=str,default='/media/awen/D/dataset/rstnet')
+    parser.add_argument('--path_prefix',type=str,default='/home/awen/workstation/dataset/rstnet')
     #/media/a100202/ccc739a0-163b-4b54-b335-f12f0d52de59/zhangawen/dataset/rstnet
     parser.add_argument('--path_prefix_web',type=str,default='/media/a1002/8b95f0e0-6f6d-4dcb-a09a-a0272b8be2b7/zhangawen/rstnet')
     parser.add_argument('--path_vocab',type=str,default='vocab.pkl')
@@ -239,7 +239,7 @@ if __name__ == '__main__':
 
     #参数调整
     parser.add_argument('--id', type=str, default='default')
-    parser.add_argument('--model', type=int, default=3)
+    parser.add_argument('--model', type=int, default=5)
     parser.add_argument('--web', type=bool, default=False)
     parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--aux_outputs', type=bool, default=False)
@@ -389,7 +389,7 @@ if __name__ == '__main__':
 
         log.write_log('epoch%d:\n' % e)
 
-        if  not use_rl:
+        if not use_rl:
             train_loss = train_xe(model, dataloader_train, optim, text_field)
             # writer.add_scalar('data/train_loss', train_loss, e)
             log.write_log('state = %s \n' % 'base_train')
@@ -400,6 +400,7 @@ if __name__ == '__main__':
             # writer.add_scalar('data/train_loss', train_loss, e)
             # writer.add_scalar('data/reward', reward, e)
             # writer.add_scalar('data/reward_baseline', reward_baseline, e)
+
             log.write_log('state = %s \n' % 'rl_train')
             log.write_log(' train_loss = %f \n'%train_loss)
             log.write_log(' reword = %f \n' % reward)
