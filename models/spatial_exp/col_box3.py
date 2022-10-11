@@ -171,6 +171,11 @@ class MultiLevelEncoder_Cap(nn.Module):
 
         self.d_model = d_model
         self.dropout = dropout
+
+        self.cap_layers = ModuleList([EncoderLayer_Box(d_model, d_k, d_v, h, d_ff, dropout,
+                                                   identity_map_reordering=identity_map_reordering)
+                                  for _ in range(N)])
+
         self.offset_layers = ModuleList([Layer_Offset(d_model, d_k, d_v, h, d_ff, dropout,
                                                    identity_map_reordering=identity_map_reordering)
                                   for _ in range(N)])
@@ -192,6 +197,9 @@ class MultiLevelEncoder_Cap(nn.Module):
         
         ref_point = generate_ref_points(self.feat_width,self.feat_height)
         
+        for l in self.cap_layers:
+            input = l(input,input,input,attention_mask, attention_weights, pos=pos)
+
         out = input 
 
         for i in range(self.N):
