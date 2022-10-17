@@ -10,7 +10,7 @@ if __name__ =="__main__":
 
     args = parser.parse_args()
     
-    
+    # find ./ -type d -empty -exec touch {}/.gitignore \;
     if args.del_cache:
 
         del_cache()

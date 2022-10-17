@@ -47,7 +47,7 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
     with tqdm(desc='Epoch %d - validation' % e, unit='it', total=len(dataloader)) as pbar:
         with torch.no_grad():
             for it, (detections,targets, captions) in enumerate(dataloader):
-                detections = detections.to(device)
+                # targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
 
                 features = detections['batch'].to(device)
                 masks = detections['mask'].to(device)
@@ -149,7 +149,7 @@ if __name__ == '__main__':
 
     #参数调整
     parser.add_argument('--id', type=str, default='default')
-    parser.add_argument('--model', type=int, default=6)
+    parser.add_argument('--model', type=int, default=7)
     parser.add_argument('--web', type=bool, default=False)
     parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--aux_outputs', type=bool, default=True)
@@ -262,8 +262,8 @@ if __name__ == '__main__':
 
         # dataloader_train = DataLoader(dataset=datasets['train'], collate_fn=datasets['train'].collate_fn(),
         #                               batch_size=args.batch_size, shuffle=True,num_workers=args.workers,pin_memory=True)
-        dataloader_val = DataLoader(dataset=datasets['val'], collate_fn=datasets['val'].collate_fn(),
-                                    batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+        dict_dataloader_val = DataLoader(dataset=datasets_evalue['e_val'], collate_fn=datasets_evalue['e_val'].collate_fn(),
+                                         batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
         
         dict_dataloader_train = DataLoader(dataset=datasets_evalue['e_train'], collate_fn=datasets_evalue['e_train'].collate_fn(),
                                            batch_size=args.batch_size, shuffle=True, num_workers=args.workers,pin_memory=True)
@@ -274,7 +274,7 @@ if __name__ == '__main__':
         log.write_log(' train_loss = %f \n' % train_loss)
                    
         # Validation loss
-        mAP= evaluate_loss(model, dataloader_val, loss_fn, text_field)
+        mAP= evaluate_loss(model, dict_dataloader_val, loss_fn, text_field)
 
         print(' mAP = %f \n' % mAP)
         log.write_log(' mAP = %f \n' % mAP)

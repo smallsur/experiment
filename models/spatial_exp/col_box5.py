@@ -8,29 +8,25 @@ from typing import List, Optional
 from models.build import BuildModel
 
 
-from .deformable_detr import Detr_Transformer
+from .detr import Detr_Transformer
 from models.captioning_model import CaptioningModel
 from .backbone import Backbone
 
 
 from .evalue_box import evalue_box
 
-
-def col_box_4(args):
+def col_box_5(args):
 
     box_backbone = Detr_Transformer(d_model=256, h=8, num_enc=6, num_dec=6, d_ff=2048, dropout=0.1,
-                     scales=4, k=4, last_feat_height=16, last_feat_width=16, 
-                    num_classes=1601, aux_outputs=args.aux_outputs, num_queries=100, norm =True)
+                     num_classes=1601, aux_outputs=args.aux_outputs, num_queries=100, norm =True)
 
-    backbone = Backbone(args, train_backbone=args.train_backbone, d_model=256, last_dim=2048, return_interm_layers=True)
+    backbone = Backbone(args, train_backbone=args.train_backbone, d_model=256, last_dim=2048, return_interm_layers=False)
 
     model = Transformer(bos_idx=2, backbone=backbone, box_backbone=box_backbone, )
 
     return model
 
-
-BuildModel.add(6, col_box_4)
-
+BuildModel.add(7, col_box_5)
 
 class Transformer(CaptioningModel):
     def __init__(self, bos_idx, box_backbone, backbone):

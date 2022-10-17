@@ -5,21 +5,14 @@ from torch import nn, Tensor
 from typing import Optional, List
 
 #model
-from .attention import MultiHeadAttention
-from detectron2.modeling.backbone import build_backbone
-from torchvision.models._utils import IntermediateLayerGetter
 from .deformable_att import DeformableHeadAttention
-from .position_encoding import build_position_encoding, build_scale_embedding
+from .criterion import SetCriterion
+from .postprocess import PostProcess
 
 #utils
-from .deformable_att import generate_ref_points, restore_scale
-from utils import box_cxcywh_to_xyxy, generalized_box_iou, is_dist_avail_and_initialized, get_world_size, accuracy
-from .matcher import build_matcher
+from .deformable_att import generate_ref_points
 
-#config
-from detectron2.config import get_cfg
-from detectron2.engine import default_setup
-from detectron2.config import CfgNode as CN
+from .matcher import build_matcher
 
 
 def _get_activation_fn(activation):
@@ -30,6 +23,7 @@ def _get_activation_fn(activation):
         return F.gelu
     if activation == "glu":
         return F.glu
+
     raise RuntimeError(F"activation should be relu/gelu, not {activation}.")
 
 
@@ -297,6 +291,8 @@ class Detr_Transformer(nn.Module):
 
         self.query_ref_point_proj = nn.Linear(d_model, 2)
 
+        self.postProcess = PostProcess()
+
         self.build_loss()
 
         self._reset_parameters()
@@ -398,267 +394,41 @@ class Detr_Transformer(nn.Module):
 
         return losses
 
+    def dump_dt(self,output,ids,sizes):
+        path_root = os.getcwd()
+        results = self.postProcess(output, sizes)
 
+        for i,id in enumerate(ids):
+            with open(os.path.join(path_root,'input','detection-results','%s.txt'%id), 'w') as f:
+                result = results[i]
+                s = result['scores']
+                l = result['labels']
+                b = result['boxes']
+                for k in range(100):
+                    s1 = s[k]
+                    l1 = l[k]
+                    x1,y1,x2,y2 = b[k]
+                    f.write(str(int(l1))+' '+str(float(s1))+' '+str(float(x1))+' '+str(float(y1))+' '+str(float(x2))+' '+str(float(y2))+'\n')
 
-class SetCriterion(nn.Module):
-
-
-    def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses):
-        """ Create the criterion.
-        Parameters:
-            num_classes: number of object categories, omitting the special no-object category
-            matcher: module able to compute a matching between targets and proposals
-            weight_dict: dict containing as key the names of the losses and as values their relative weight.
-            eos_coef: relative classification weight applied to the no-object category
-            losses: list of all the losses to be applied. See get_loss for list of available losses.
-        """
-        super().__init__()
-        self.num_classes = num_classes
-        self.matcher = matcher
-        self.weight_dict = weight_dict
-        self.eos_coef = eos_coef
-        self.losses = losses
-        empty_weight = torch.ones(self.num_classes + 1)
-        empty_weight[-1] = self.eos_coef
-        self.register_buffer('empty_weight', empty_weight)
-
-    def loss_labels(self, outputs, targets, indices, num_boxes, log=True):
-        """Classification loss (NLL)
-        targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
-        """
-        assert 'pred_logits' in outputs
-        src_logits = outputs['pred_logits']  # 2*100*92
-
-        idx = self._get_src_permutation_idx(indices)  # batchidx,idx
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])  # batch*numbox
-        target_classes = torch.full(src_logits.shape[:2], self.num_classes,
-                                    dtype=torch.int64, device=src_logits.device)
-        target_classes[idx] = target_classes_o
-
-        loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        losses = {'loss_ce': loss_ce}
-
-        if log:
-            # TODO this should probably be a separate loss, not hacked in this one here
-            losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]
-        return losses
-
-    @torch.no_grad()
-    def loss_cardinality(self, outputs, targets, indices, num_boxes):
-        """ Compute the cardinality error, ie the absolute error in the number of predicted non-empty boxes
-        This is not really a loss, it is intended for logging purposes only. It doesn't propagate gradients
-        """
-        pred_logits = outputs['pred_logits']
-        device = pred_logits.device
-        tgt_lengths = torch.as_tensor([len(v["labels"]) for v in targets], device=device)
-        # Count the number of predictions that are NOT "no-object" (which is the last class)
-        card_pred = (pred_logits.argmax(-1) != pred_logits.shape[-1] - 1).sum(1)
-        card_err = F.l1_loss(card_pred.float(), tgt_lengths.float())
-        losses = {'cardinality_error': card_err}
-        return losses
-
-    def loss_boxes(self, outputs, targets, indices, num_boxes):
-        """Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss
-           targets dicts must contain the key "boxes" containing a tensor of dim [nb_target_boxes, 4]
-           The target boxes are expected in format (center_x, center_y, w, h), normalized by the image size.
-        """
-        assert 'pred_boxes' in outputs
-        idx = self._get_src_permutation_idx(indices)
-        src_boxes = outputs['pred_boxes'][idx]
-        target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
-
-        loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
-
-        losses = {}
-        losses['loss_bbox'] = loss_bbox.sum() / num_boxes
-
-        loss_giou = 1 - torch.diag(generalized_box_iou(
-            box_cxcywh_to_xyxy(src_boxes),
-            box_cxcywh_to_xyxy(target_boxes)))
-        losses['loss_giou'] = loss_giou.sum() / num_boxes
-        return losses
-
-    def _get_src_permutation_idx(self, indices):
-        # permute predictions following indices
-        batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
-        src_idx = torch.cat([src for (src, _) in indices])
-        return batch_idx, src_idx
-
-    def _get_tgt_permutation_idx(self, indices):
-        # permute targets following indices
-        batch_idx = torch.cat([torch.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)])
-        tgt_idx = torch.cat([tgt for (_, tgt) in indices])
-        return batch_idx, tgt_idx
-
-    def get_loss(self, loss, outputs, targets, indices, num_boxes, **kwargs):
-        loss_map = {
-            'labels': self.loss_labels,
-            'cardinality': self.loss_cardinality,
-            'boxes': self.loss_boxes,
-        }
-        assert loss in loss_map, f'do you really want to compute {loss} loss?'
-        return loss_map[loss](outputs, targets, indices, num_boxes, **kwargs)
-
-    def forward(self, outputs, targets):
-        """ This performs the loss computation.
-        Parameters:
-             outputs: dict of tensors, see the output specification of the model for the format
-             targets: list of dicts, such that len(targets) == batch_size.
-                      The expected keys in each dict depends on the losses applied, see each loss' doc
-        """
-        outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
-
-        # Retrieve the matching between the outputs of the last layer and the targets
-        indices = self.matcher(outputs_without_aux, targets)
-
-        # Compute the average number of target boxes accross all nodes, for normalization purposes
-        num_boxes = sum(len(t["labels"]) for t in targets)
-        num_boxes = torch.as_tensor([num_boxes], dtype=torch.float, device=next(iter(outputs.values())).device)
-        if is_dist_avail_and_initialized():
-            torch.distributed.all_reduce(num_boxes)
-        num_boxes = torch.clamp(num_boxes / get_world_size(), min=1).item()
-
-        # Compute all the requested losses
-        losses = {}
-        for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_boxes))
-
-        # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
-        if 'aux_outputs' in outputs:
-            for i, aux_outputs in enumerate(outputs['aux_outputs']):
-                indices = self.matcher(aux_outputs, targets)
-                for loss in self.losses:
-                    if loss == 'masks':
-                        # Intermediate masks losses are too costly to compute, we ignore them.
-                        continue
-                    kwargs = {}
-                    if loss == 'labels':
-                        # Logging is enabled only for the last layer
-                        kwargs = {'log': False}
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_boxes, **kwargs)
-                    l_dict = {k + f'_{i}': v for k, v in l_dict.items()}
-                    losses.update(l_dict)
-
-        return losses
-
-class PostProcess(nn.Module):
-
-    @torch.no_grad()
-    def forward(self, outputs, target_sizes):
-
-        out_logits, out_bbox = outputs['pred_logits'], outputs['pred_boxes']
-        target_sizes = torch.tensor(target_sizes, dtype=torch.long,device=out_logits.device)
-        assert len(out_logits) == len(target_sizes)
-        assert target_sizes.shape[1] == 2
-
-        prob = F.softmax(out_logits, -1)
-        scores, labels = prob[..., :-1].max(-1)
-
-        # convert to [x0, y0, x1, y1] format
-        boxes = box_cxcywh_to_xyxy(out_bbox)
-        # and from relative [0, 1] to absolute [0, height] coordinates
-        img_h, img_w = target_sizes.unbind(1)
-        scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
-        boxes = boxes * scale_fct[:, None, :]
-
-        results = [{'scores': s, 'labels': l, 'boxes': b} for s, l, b in zip(scores, labels, boxes)]
-
-        return results
+    def dump_gt(self,target,boxfeild):
+        path_root = os.getcwd()
+        sizes = []
+        ids = []
+        for t in target:
+            id = t['id']
+            with open(os.path.join(path_root,'input','ground-truth','%s.txt'%id), 'w') as f:
+                boxes = t['boxes']
+                labels = t['labels']
+                boxes,size= boxfeild.xyxy_to_xywh(id,boxes)
+                sizes.append(size)
+                for label,box in zip(labels,boxes):
+                    x1,y1,x2,y2 = box
+                    f.write(str(int(label))+' '+str(float(x1))+' '+str(float(y1))+' '+str(float(x2))+' '+str(float(y2))+'\n')
+            ids.append(id)
+        return ids,sizes
 
 
 
-class Backbone(nn.Module):
-
-    def __init__(self, args, train_backbone=False, pixel_mean = [103.53, 116.28, 123.675], 
-                    pixel_std = [57.375, 57.12, 58.395], d_model = 256, last_dim=2048):
-
-        super(Backbone, self).__init__()
-
-        self.backbone = build_backbone(self.setup(args)) # 72*96, 36*48, 18*24, 8*11
-
-        self.path_ = os.path.join(args.dir_to_save_model, 'rs101.pth')
-
-
-        for name, parameter in self.backbone.named_parameters():
-            if not train_backbone or 'res3' not in name and 'res4' not in name and 'res5' not in name:
-                parameter.requires_grad_(False)
-
-        self.return_layers = {"res3": "0", "res4": "1", "res5": "2"}
-        self.body = IntermediateLayerGetter(self.backbone, return_layers=self.return_layers)
-
-        self.c3_conv = nn.Conv2d(last_dim//4, d_model, kernel_size=1)
-        self.c4_conv = nn.Conv2d(last_dim//2, d_model, kernel_size=1)
-        self.c5_conv = nn.Conv2d(last_dim, d_model, kernel_size=1)
-        self.c6_conv = nn.Conv2d(last_dim, d_model, kernel_size=(3,3), stride=2)
-
-        self.pos_enc = build_position_encoding(d_model, 'sine')
-        self.pos_scale = build_scale_embedding(4, d_model)
- 
-    def forward(self, x, mask):
-
-        xs = self.body(x)
-        # encode_input, mask
-        outs = []
-        masks = []
-
-        for name, x in xs.items():
-            if name == '0':
-                scale_map = self.c3_conv(x)
-            elif name == '1':
-                scale_map = self.c4_conv(x)
-            else:
-                scale_map = self.c5_conv(x)
-
-            mask_ = F.interpolate(mask[None].float(), size=scale_map.shape[-2:]).to(torch.bool)[0]
-            outs.append(scale_map)
-            masks.append(mask_)
-
-        c6 = self.c6_conv(xs['2'])
-        mask_ = F.interpolate(mask[None].float(), size=c6.shape[-2:]).to(torch.bool)[0]
-        outs.append(c6)
-        masks.append(mask_)
-
-        poses = []
-
-        #positions
-        for i in range(len(outs)):
-            pos_enc_ = self.pos_enc(outs[i], masks[i])
-            pos_scale_ =self.pos_scale(outs[i], i)
-            pos_ = pos_enc_ + pos_scale_
-            poses.append(pos_)
-
-        return outs, masks, poses
-
-
-    def setup(self, args=None):
-        cfg = get_cfg()
-        self.add_attribute_config(cfg)
-        cfg.MODEL.RESNETS.RES5_DILATION = 1
-        cfg.freeze()
-        default_setup(cfg, args)
-        return cfg
-
-    def add_attribute_config(self,cfg):
-        cfg._BASE_= "Base-RCNN-grid.yaml"
-        cfg.MODEL.PIXEL_STD = [57.375, 57.120, 58.395]
-        cfg.MODEL.WEIGHTS = "detectron2://ImageNetPretrained/FAIR/X-101-32x8d.pkl"
-        cfg.MODEL.RESNETS.STRIDE_IN_1X1 = False
-        cfg.MODEL.RESNETS.NUM_GROUPS = 32
-        cfg.MODEL.RESNETS.WIDTH_PER_GROUP = 8
-        cfg.MODEL.RESNETS.DEPTH = 101
-        cfg.MODEL.RESNETS.OUT_FEATURES = ['res5']
-        cfg.MODEL.ATTRIBUTE_ON = False
-        cfg.INPUT.MAX_ATTR_PER_INS = 16
-        cfg.MODEL.ROI_ATTRIBUTE_HEAD = CN()
-        cfg.MODEL.ROI_ATTRIBUTE_HEAD.OBJ_EMBED_DIM = 256
-        cfg.MODEL.ROI_ATTRIBUTE_HEAD.FC_DIM = 512
-        cfg.MODEL.ROI_ATTRIBUTE_HEAD.LOSS_WEIGHT = 0.2
-        cfg.MODEL.ROI_ATTRIBUTE_HEAD.NUM_CLASSES = 400
-        cfg.MODEL.RPN.BBOX_LOSS_WEIGHT = 1.0
-        cfg.MODEL.ROI_BOX_HEAD.BBOX_LOSS_WEIGHT = 1.0
-    
-    def load_model_(self):
-        self.backbone.load_state_dict(torch.load(self.path_))
 
 
 
