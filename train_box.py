@@ -26,7 +26,7 @@ from utils import Logger
 import models.spatial_exp
 from models.build import BuildModel
 from models.spatial_exp.evalue_box import evalue_box
-# from utils.box_ops import box_cxcywh_to_xyxy
+
 
 random.seed(1234)
 torch.manual_seed(1234)
@@ -37,9 +37,6 @@ warnings.filterwarnings("ignore")
 import sys
 
 sys.path.append(os.path.join(os.getcwd(), '..',))
-
-import evaluation
-from evaluation import PTBTokenizer, Cider
 
 
 def evaluate_loss(model, dataloader, loss_fn, text_field):
@@ -52,10 +49,13 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
             for it, (detections,targets, captions) in enumerate(dataloader):
                 detections = detections.to(device)
 
+                features = detections['batch'].to(device)
+                masks = detections['mask'].to(device)
+
                 # if e == 0:#在第一个周期生成ground-truth
                 ids,sizes = model.dump_gt(targets,boxfield)
                 targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
-                box_out= model(detections)
+                box_out= model(features, masks)
                 model.dump_dt(box_out,ids,sizes)
                 pbar.update()
 
@@ -64,27 +64,6 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
     return mAP
 
 
-# def evaluate_metrics(model, dataloader, text_field):
-#     import itertools
-#     model.eval()
-#     gen = {}
-#     gts = {}
-#     with tqdm(desc='Epoch %d - evaluation' % e, unit='it', total=len(dataloader)) as pbar:
-#         for it, (images, targets, captions) in enumerate(iter(dataloader)):#(images, caps_gt)
-#             images = images.to(device)
-#             with torch.no_grad():
-#                 out, _ = model.beam_search(images, 20, text_field.vocab.stoi['<eos>'], 5, out_size=1)
-#             caps_gen = text_field.decode(out, join_words=False)
-#             for i, (gts_i, gen_i) in enumerate(zip(captions, caps_gen)):
-#                 gen_i = ' '.join([k for k, g in itertools.groupby(gen_i)])
-#                 gen['%d_%d' % (it, i)] = [gen_i, ]
-#                 gts['%d_%d' % (it, i)] = gts_i
-#             pbar.update()
-
-#     gts = evaluation.PTBTokenizer.tokenize(gts)
-#     gen = evaluation.PTBTokenizer.tokenize(gen)
-#     scores, _ = evaluation.compute_scores(gts, gen)
-#     return scores
 
 
 def train_xe(model, dataloader, optim, text_field):
@@ -98,19 +77,16 @@ def train_xe(model, dataloader, optim, text_field):
         for it, (detections, targets, captions) in enumerate(dataloader):
 
             targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
-            detections = detections.to(device) #batch len dim ,batch*
 
-            box_out = model(detections)#25,100,4 /// 25,100,1602
+            features = detections['batch'].to(device)
+            masks = detections['mask'].to(device)
 
-            # captions_gt = captions[:, 1:].contiguous()
-            # cap_out = cap_out[:, :-1].contiguous()
-            # loss_cap = loss_fn(cap_out.view(-1, len(text_field.vocab)), captions_gt.view(-1))
+            box_out = model(features,masks)#25,100,4 /// 25,100,1602
 
             loss_box = model.forward_box_loss(box_out,targets)
             
-            loss = loss_box # * args.norm_r
+            loss = loss_box 
 
-            # loss = loss_cap
             optim.zero_grad()
             loss.backward()
 
@@ -128,72 +104,13 @@ def train_xe(model, dataloader, optim, text_field):
     return loss
 
 
-# def train_scst(model, dataloader, optim, cider, text_field):
-#     # Training with self-critical
-#     tokenizer_pool = multiprocessing.Pool()
-#     running_reward = .0
-#     running_reward_baseline = .0
-
-#     model.train()
-#     scheduler_rl.step()
-#     print('lr = ', optim_rl.state_dict()['param_groups'][0]['lr'])
-
-#     running_loss = .0
-#     seq_len = 20
-    
-#     beam_size = 5
-
-#     with tqdm(desc='Epoch %d - train' % e, unit='it', total=len(dataloader)) as pbar:
-#         for it, (detections,targets, caps_gt) in enumerate(dataloader):
-#             detections = detections.to(device)
-#             targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets] if args.box_in_lr else targets
-#             outs, log_probs = model.beam_search(detections, seq_len, text_field.vocab.stoi['<eos>'],
-#                                                 beam_size, out_size=beam_size)
-#             if args.box_in_lr:
-#                 box_out = model(detections, caps_gt, only_box = True)
-
-                
-            
-#             optim.zero_grad()
-
-#             # Rewards
-#             if args.box_in_lr:
-#                 loss_box = model.forward_box_loss(box_out,targets)
-
-#             caps_gen = text_field.decode(outs.view(-1, seq_len))
-#             caps_gt = list(itertools.chain(*([c, ] * beam_size for c in caps_gt)))
-#             caps_gen, caps_gt = tokenizer_pool.map(evaluation.PTBTokenizer.tokenize, [caps_gen, caps_gt])
-#             reward = cider.compute_score(caps_gt, caps_gen)[1].astype(np.float32)
-#             reward = torch.from_numpy(reward).to(device).view(detections.shape[0], beam_size)
-#             reward_baseline = torch.mean(reward, -1, keepdim=True)
-#             loss = -torch.mean(log_probs, -1) * (reward - reward_baseline)
-
-#             loss = loss.mean()
-
-#             if args.box_in_lr:
-#                 loss = loss + loss_box * 0.1 * args.norm_r
-#             loss.backward()
-#             optim.step()
-
-#             running_loss += loss.item()
-#             running_reward += reward.mean().item()
-#             running_reward_baseline += reward_baseline.mean().item()
-#             pbar.set_postfix(loss=running_loss / (it + 1), reward=running_reward / (it + 1),
-#                              reward_baseline=running_reward_baseline / (it + 1))
-
-#             pbar.update()
-
-#     loss = running_loss / len(dataloader)
-#     reward = running_reward / len(dataloader)
-#     reward_baseline = running_reward_baseline / len(dataloader)
-#     return loss, reward, reward_baseline
 
 
 if __name__ == '__main__':
     device = torch.device('cuda')
     parser = argparse.ArgumentParser(description='Experiment_Train')
     parser.add_argument('--exp_name', type=str, default='Experiment')
-    parser.add_argument('--batch_size', type=int, default=25)
+    parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--m', type=int, default=40)
     parser.add_argument('--head', type=int, default=8)
@@ -209,10 +126,11 @@ if __name__ == '__main__':
     parser.add_argument('--path_txtlog',type=str,default='log')
     parser.add_argument('--dect_path', type=str, default='')
 
-    parser.add_argument('--path_prefix',type=str,default='/media/awen/D/dataset/rstnet')
+    parser.add_argument('--path_prefix',type=str,default='/home/awen/workstation/dataset/rstnet')
     #/media/a100202/ccc739a0-163b-4b54-b335-f12f0d52de59/zhangawen/dataset/rstnet
     parser.add_argument('--path_prefix_web',type=str,default='/media/a1002/8b95f0e0-6f6d-4dcb-a09a-a0272b8be2b7/zhangawen/rstnet')
     parser.add_argument('--path_vocab',type=str,default='vocab.pkl')
+    parser.add_argument('--image_path', type=str, default='Datasets')
     
     parser.add_argument('--xe_least', type=int, default=15)
     parser.add_argument('--xe_most', type=int, default=30)
@@ -231,11 +149,12 @@ if __name__ == '__main__':
 
     #参数调整
     parser.add_argument('--id', type=str, default='default')
-    parser.add_argument('--model', type=int, default=4)
+    parser.add_argument('--model', type=int, default=6)
     parser.add_argument('--web', type=bool, default=False)
     parser.add_argument('--gpu_id', type=int, default=0)
-    parser.add_argument('--aux_outputs', type=bool, default=False)
+    parser.add_argument('--aux_outputs', type=bool, default=True)
     parser.add_argument('--box_in_lr', type=bool, default=False)
+    parser.add_argument('--train_backbone', type=bool, default=False)
 
     args = parser.parse_args()
 
@@ -248,16 +167,14 @@ if __name__ == '__main__':
     if args.web:
         args.path_prefix = args.path_prefix_web
 
-    path_ = ['features_path', 'annotation_folder', 'dir_to_save_model', 'logs_folder', 'path_vocab', 'path_txtlog', 'dect_path']
+    path_ = ['image_path','features_path', 'annotation_folder', 'dir_to_save_model', 'logs_folder', 'path_vocab', 'path_txtlog', 'dect_path']
 
     for p in path_ :
         setattr(args, p, os.path.join(args.path_prefix, getattr(args, p)))
 
 #*******************************************************************************
     print(args)
-    print('The Training of Experiment')
-
-    writer = SummaryWriter(log_dir=os.path.join(args.logs_folder, args.exp_name))
+    print('The Training of Box')
 
 
     #init textlog
@@ -279,16 +196,6 @@ if __name__ == '__main__':
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('\n model size: %d\n' % n_parameters)
-
-    # ref_caps_train = list(datasets['train'].text)
-    # cider_train = Cider(PTBTokenizer.tokenize(ref_caps_train))
-
-    '''
-    def lambda_lr(s):
-        warm_up = args.warmup
-        s += 1
-        return (model.d_model ** -.5) * min(s ** -.5, s * warm_up ** -1.5)
-    '''
 
     def lambda_lr(s):
         print("s:", s)
@@ -315,19 +222,16 @@ if __name__ == '__main__':
             lr = args.rl_base_lr * 0.2 * 0.2 * 0.2
         return lr
 
-
     # Initial conditions
     optim = Adam(model.parameters(), lr=1, betas=(0.9, 0.98))
     scheduler = LambdaLR(optim, lambda_lr)
 
-    # optim_rl = Adam(model.parameters(), lr=1, betas=(0.9, 0.98))
-    # scheduler_rl = LambdaLR(optim_rl, lambda_lr_rl)
 
     loss_fn = NLLLoss(ignore_index=text_field.vocab.stoi['<pad>'])
 
     use_rl = False
-    best_cider = .0
-    best_test_cider = 0.
+    # best_cider = .0
+    # best_test_cider = 0.
     patience = 0
     start_epoch = 0
 
@@ -346,83 +250,35 @@ if __name__ == '__main__':
             np.random.set_state(data['numpy_rng_state'])
             random.setstate(data['random_rng_state'])
             model.load_state_dict(data['state_dict'], strict=False)
-            """
-            optim.load_state_dict(data['optimizer'])
-            scheduler.load_state_dict(data['scheduler'])
-            """
             start_epoch = data['epoch'] + 1
-            # best_cider = data['best_cider']
-            # best_test_cider = data['best_test_cider']
-            # patience = data['patience']
-            # use_rl = data['use_rl']
             best_map = data['best_map']
-
-            # if use_rl:
             optim.load_state_dict(data['optimizer'])
             scheduler.load_state_dict(data['scheduler'])
-            # else:
-            #     optim_rl.load_state_dict(data['optimizer'])
-            #     scheduler_rl.load_state_dict(data['scheduler'])
+
 
     print("Training starts")
 
     for e in range(start_epoch, start_epoch + 100):
 
-        dataloader_train = DataLoader(dataset=datasets['train'], collate_fn=datasets['train'].collate_fn(),
-                                      batch_size=args.batch_size, shuffle=True,num_workers=args.workers,pin_memory=True)
+        # dataloader_train = DataLoader(dataset=datasets['train'], collate_fn=datasets['train'].collate_fn(),
+        #                               batch_size=args.batch_size, shuffle=True,num_workers=args.workers,pin_memory=True)
         dataloader_val = DataLoader(dataset=datasets['val'], collate_fn=datasets['val'].collate_fn(),
                                     batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
-        # dict_dataloader_train = DataLoader(dataset=datasets_evalue['e_train'], collate_fn=datasets_evalue['e_train'].collate_fn(),
-        #                                    batch_size=args.batch_size//5, shuffle=True, num_workers=args.workers,pin_memory=True)
-        # dict_dataloader_val = DataLoader(dataset=datasets_evalue['e_val'], collate_fn=datasets_evalue['e_val'].collate_fn(),
-        #                                  batch_size=args.batch_size//5, shuffle=False, num_workers=args.workers)
-        # dict_dataloader_test = DataLoader(dataset=datasets_evalue['e_test'], collate_fn=datasets_evalue['e_test'].collate_fn(),
-        #                                   batch_size=args.batch_size//5, shuffle=False, num_workers=args.workers)
+        
+        dict_dataloader_train = DataLoader(dataset=datasets_evalue['e_train'], collate_fn=datasets_evalue['e_train'].collate_fn(),
+                                           batch_size=args.batch_size, shuffle=True, num_workers=args.workers,pin_memory=True)
 
         log.write_log('epoch%d:\n' % e)
 
-
-        # train_loss = train_xe(model, dataloader_train, optim, text_field)
-        # writer.add_scalar('data/train_loss', train_loss, e)
-        # # log.write_log('state = %s \n' % 'base_train')
-        # log.write_log(' train_loss = %f \n' % train_loss)
-            
-
-        
+        train_loss = train_xe(model, dict_dataloader_train, optim, text_field)
+        log.write_log(' train_loss = %f \n' % train_loss)
+                   
         # Validation loss
-        # mAP= evaluate_loss(model, dataloader_val, loss_fn, text_field)
-        mAP = 0.1
-        writer.add_scalar('data/mAP', mAP, e)
+        mAP= evaluate_loss(model, dataloader_val, loss_fn, text_field)
 
         print(' mAP = %f \n' % mAP)
         log.write_log(' mAP = %f \n' % mAP)
         log.write_log("\n")
-
-        # Validation scores
-        # scores = evaluate_metrics(model, dict_dataloader_val, text_field)
-        # print("Validation scores", scores)
-        # val_cider = scores['CIDEr']
-        # writer.add_scalar('data/val_cider', val_cider, e)
-        # writer.add_scalar('data/val_bleu1', scores['BLEU'][0], e)
-        # writer.add_scalar('data/val_bleu4', scores['BLEU'][3], e) 
-        # writer.add_scalar('data/val_meteor', scores['METEOR'], e)
-        # writer.add_scalar('data/val_rouge', scores['ROUGE'], e)
-
-        # log.write_log('val_evaluation scores = %s' % str(scores))
-        # log.write_log("\n")
-
-        # # Test scores
-        # scores = evaluate_metrics(model, dict_dataloader_test, text_field)
-        # print("Test scores", scores)
-        # test_cider = scores['CIDEr']
-        # writer.add_scalar('data/test_cider', test_cider, e)
-        # writer.add_scalar('data/test_bleu1', scores['BLEU'][0], e)
-        # writer.add_scalar('data/test_bleu4', scores['BLEU'][3], e)
-        # writer.add_scalar('data/test_meteor', scores['METEOR'], e)
-        # writer.add_scalar('data/test_rouge', scores['ROUGE'], e)
-
-        # log.write_log('test_evaluation scores = %s' % str(scores))
-        # log.write_log("\n")
 
         log.write_log("************************epoch %d end**************************\n" % e)
         log.write_log("**************************************************************\n")
@@ -433,85 +289,17 @@ if __name__ == '__main__':
             best_cider = mAP
             best = True
 
-        # best_test = False
-        # if test_cider >= best_test_cider:
-        #     best_test_cider = test_cider
-        #     best_test = True
-
-        # switch_to_rl = False
-        # exit_train = False
-
-        # if patience == 5:
-        #     if e < args.xe_least:   # xe stage train 15 epoches at least 
-        #         print('special treatment, e = {}'.format(e))
-        #         use_rl = False
-        #         switch_to_rl = False
-        #         patience = 0
-        #     elif not use_rl:
-        #         use_rl = True
-        #         switch_to_rl = True
-        #         patience = 0
-                
-        #         optim_rl = Adam(model.parameters(), lr=1, betas=(0.9, 0.98))
-        #         scheduler_rl = LambdaLR(optim_rl, lambda_lr_rl)
-                
-        #         for k in range(e-1):
-        #             scheduler_rl.step()
-
-        #         print("Switching to RL")
-        #     else:
-        #         print('patience reached.')
-        #         exit_train = True
-
-        # if e == args.xe_most:     # xe stage no more than 20 epoches
-        #     if not use_rl:
-        #         use_rl = True
-        #         switch_to_rl = True
-        #         patience = 0
-                
-        #         optim_rl = Adam(model.parameters(), lr=1, betas=(0.9, 0.98))
-        #         scheduler_rl = LambdaLR(optim_rl, lambda_lr_rl)
-
-        #         for k in range(e-1):
-        #             scheduler_rl.step()
-
-        #         print("Switching to RL")
-
-        # if switch_to_rl and not best:
-        #     data = torch.load(os.path.join(args.dir_to_save_model, '%s_best.pth' % args.exp_name))
-        #     torch.set_rng_state(data['torch_rng_state'])
-        #     torch.cuda.set_rng_state(data['cuda_rng_state'])
-        #     np.random.set_state(data['numpy_rng_state'])
-        #     random.setstate(data['random_rng_state'])
-        #     model.load_state_dict(data['state_dict'])
-        #     print('Resuming from epoch %d, validation loss %f, best_cider %f, and best test_cider %f' % (
-        #         data['epoch'], data['val_loss'], data['best_cider'], data['best_test_cider']))
-
         torch.save({
             'torch_rng_state': torch.get_rng_state(),
             'cuda_rng_state': torch.cuda.get_rng_state(),
             'numpy_rng_state': np.random.get_state(),
             'random_rng_state': random.getstate(),
             'epoch': e,
-            # 'val_loss': val_loss,
-            # 'val_cider': val_cider,
             'state_dict': model.state_dict(),
             'optimizer': optim.state_dict() ,
             'scheduler': scheduler.state_dict(),
             'best_map':best_map,
-            # 'use_rl': use_rl,
         }, os.path.join(args.dir_to_save_model, '%s_last.pth' % args.exp_name))
         
         if best:
             copyfile(os.path.join(args.dir_to_save_model, '%s_last.pth' % args.exp_name), os.path.join(args.dir_to_save_model, '%s_best.pth' % args.exp_name))
-        # if best_test:
-        #     copyfile(os.path.join(args.dir_to_save_model, '%s_last.pth' % args.exp_name), os.path.join(args.dir_to_save_model, '%s_best_test.pth' % args.exp_name))
-
-
-#         # 保存模型，用于微调
-#         if e >= 25:
-#             copyfile(os.path.join(args.dir_to_save_model, '%s_last.pth' % args.exp_name), os.path.join(args.dir_to_save_model, '{}_{}.pth'.format(args.exp_name, e)))
-
-        # if exit_train:
-        #     writer.close()
-        #     break

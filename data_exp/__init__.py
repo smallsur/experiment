@@ -9,7 +9,7 @@ def Build_DataSet(args,text_field):
 
 
     # Pipeline for image regions
-    image_field = ImageDetectionsField(detections_path=args.features_path, max_detections=49)
+    image_field = ImageDetectionsField(detections_path=args.features_path, max_detections=49, images_path=args.image_path)
 
     box_field = BoxField(dect_path=args.dect_path,sc_image_path=args.annotation_folder)
     # Create the dataset

@@ -307,10 +307,10 @@ class NestedTensor(object):
 def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
     # TODO make this more general
     if tensor_list[0].ndim == 3:
-        if torchvision._is_tracing():
-            # nested_tensor_from_tensor_list() does not export well to ONNX
-            # call _onnx_nested_tensor_from_tensor_list() instead
-            return _onnx_nested_tensor_from_tensor_list(tensor_list)
+        # if torchvision._is_tracing():
+        #     # nested_tensor_from_tensor_list() does not export well to ONNX
+        #     # call _onnx_nested_tensor_from_tensor_list() instead
+        #     return _onnx_nested_tensor_from_tensor_list(tensor_list)
 
         # TODO make it support different-sized images
         max_size = _max_by_axis([list(img.shape) for img in tensor_list])
@@ -326,7 +326,7 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
             m[: img.shape[1], :img.shape[2]] = False
     else:
         raise ValueError('not supported')
-    return NestedTensor(tensor, mask)
+    return tensor, mask
 
 
 # _onnx_nested_tensor_from_tensor_list() is an implementation of

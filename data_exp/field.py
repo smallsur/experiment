@@ -1,6 +1,7 @@
 # coding: utf8
 from collections import Counter, OrderedDict
 from torch.utils.data.dataloader import default_collate
+import torchvision.transforms as transforms
 from itertools import chain
 import six
 import torch
@@ -9,6 +10,7 @@ import h5py
 import os
 import warnings
 import shutil
+from PIL import Image
 
 from .vocab import Vocab
 from .utils import get_tokenizer,load_json
@@ -90,33 +92,93 @@ class BoxField(RawField):
 
 class ImageDetectionsField(RawField):
     def __init__(self, preprocessing=None, postprocessing=None, detections_path=None, max_detections=100,
-                 sort_by_prob=False):
+                 sort_by_prob=False, images_path=None):
+
+        pixel_mean = [103.53, 116.28, 123.675]
+        pixel_std = [57.375, 57.12, 58.395]
+
         self.max_detections = max_detections
         self.detections_path = detections_path
         self.sort_by_prob = sort_by_prob #false 
+        self.images_path = images_path
+
+        pixel_mean = torch.Tensor(pixel_mean).view(3, 1, 1)
+        pixel_std = torch.Tensor(pixel_std).view(3, 1, 1)
+
+
+        self.normalizer = lambda x: (x - pixel_mean) / pixel_std
+
+        self.transform = transforms.ToTensor()
+
         super(ImageDetectionsField, self).__init__(preprocessing, postprocessing)
 
-    def preprocess(self, x, avoid_precomp=False):
-        image_id = int(x.split('_')[-1].split('.')[0])
-        try:
-            f = h5py.File(self.detections_path, 'r')
-            precomp_data = f['%d_features' % image_id][()]
-            # precomp_data = f['%d_grids' % image_id][()]
-            if self.sort_by_prob:
-                precomp_data = precomp_data[np.argsort(np.max(f['%d_cls_prob' % image_id][()], -1))[::-1]]
-        except KeyError:
-            warnings.warn('Could not find detections for %d' % image_id)
-            precomp_data = np.random.rand(10,2048)
+    # def preprocess(self, x, avoid_precomp=False):
+    #     image_id = int(x.split('_')[-1].split('.')[0])
+    #     try:
+    #         f = h5py.File(self.detections_path, 'r')
+    #         precomp_data = f['%d_features' % image_id][()]
+    #         # precomp_data = f['%d_grids' % image_id][()]
+    #         if self.sort_by_prob:
+    #             precomp_data = precomp_data[np.argsort(np.max(f['%d_cls_prob' % image_id][()], -1))[::-1]]
+    #     except KeyError:
+    #         warnings.warn('Could not find detections for %d' % image_id)
+    #         precomp_data = np.random.rand(10,2048)
 
-        delta = self.max_detections - precomp_data.shape[0]
-        if delta > 0:
-            precomp_data = np.concatenate([precomp_data, np.zeros((delta, precomp_data.shape[1]))], axis=0)
-        elif delta < 0:
-            precomp_data = precomp_data[:self.max_detections]
+    #     delta = self.max_detections - precomp_data.shape[0]
+    #     if delta > 0:
+    #         precomp_data = np.concatenate([precomp_data, np.zeros((delta, precomp_data.shape[1]))], axis=0)
+    #     elif delta < 0:
+    #         precomp_data = precomp_data[:self.max_detections]
 
-        return precomp_data.astype(np.float32)
+    #     return precomp_data.astype(np.float32)
 
 
+    def preprocess(self, x):
+
+        path_= None
+
+        if 'train' in x:
+            path_ = os.path.join(self.images_path,'train2014',x)
+        else:
+            path_ = os.path.join(self.images_path,'val2014',x)
+
+        return self.transform(self._load_images(path_))
+
+    def process(self, batch):
+        batch = [self.normalizer(x) for x in batch]
+        batch, mask = generate_mask(batch)
+        return {'batch': batch, 'mask': mask}
+        
+    def _load_images(self, path):
+
+        return Image.open(path).convert("RGB")
+    
+def generate_mask(tensor_list):
+
+    if tensor_list[0].ndim == 3:
+
+        max_size = _max_by_axis([list(img.shape) for img in tensor_list])
+
+        batch_shape = [len(tensor_list)] + max_size
+        b, c, h, w = batch_shape
+        dtype = tensor_list[0].dtype
+        device = tensor_list[0].device
+        tensor = torch.zeros(batch_shape, dtype=dtype, device=device)
+        mask = torch.ones((b, h, w), dtype=torch.bool, device=device)
+        for img, pad_img, m in zip(tensor_list, tensor, mask):
+            pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
+            m[: img.shape[1], :img.shape[2]] = False
+    else:
+        raise ValueError('not supported')
+    return tensor, mask
+
+def _max_by_axis(the_list):
+
+    maxes = the_list[0]
+    for sublist in the_list[1:]:
+        for index, item in enumerate(sublist):
+            maxes[index] = max(maxes[index], item)
+    return maxes
 class TextField(RawField):
     vocab_cls = Vocab
     # Dictionary mapping PyTorch tensor dtypes to the appropriate Python

@@ -5,7 +5,7 @@ from models.containers import Module
 
 class ScaledDotProductAttention(nn.Module):
     '''
-    Scaled dot-product attention
+    Scled dot-product attention
     '''
 
     def __init__(self, d_model, d_k, d_v, h, dropout=.1):#, comment=None
@@ -74,6 +74,7 @@ class ScaledDotProductAttention(nn.Module):
 
 
 class MultiHeadAttention(Module):
+
     '''
     Multi-head attention layer with Dropout and Layer Normalization.
     '''
@@ -112,3 +113,7 @@ class MultiHeadAttention(Module):
             out = self.dropout(out)
             out = self.layer_norm(queries + out)
         return out
+
+
+
+

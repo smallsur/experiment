@@ -202,7 +202,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Experiment_Train')
     parser.add_argument('--exp_name', type=str, default='Experiment')
     parser.add_argument('--batch_size', type=int, default=25)
-    parser.add_argument('--workers', type=int, default=8)
+    parser.add_argument('--workers', type=int, default=0)
     parser.add_argument('--m', type=int, default=40)
     parser.add_argument('--head', type=int, default=8)
     parser.add_argument('--warmup', type=int, default=10000)
@@ -216,6 +216,7 @@ if __name__ == '__main__':
     parser.add_argument('--logs_folder', type=str, default='transformer_tensorboard_logs')
     parser.add_argument('--path_txtlog',type=str,default='log')
     parser.add_argument('--dect_path', type=str, default='')
+    parser.add_argument('--image_path', type=str, default='Datasets')
 
     parser.add_argument('--path_prefix',type=str,default='/home/awen/workstation/dataset/rstnet')
     #/media/a100202/ccc739a0-163b-4b54-b335-f12f0d52de59/zhangawen/dataset/rstnet
@@ -256,7 +257,7 @@ if __name__ == '__main__':
     if args.web:
         args.path_prefix = args.path_prefix_web
 
-    path_ = ['features_path', 'annotation_folder', 'dir_to_save_model', 'logs_folder', 'path_vocab', 'path_txtlog', 'dect_path']
+    path_ = ['image_path', 'features_path', 'annotation_folder', 'dir_to_save_model', 'logs_folder', 'path_vocab', 'path_txtlog', 'dect_path']
 
     for p in path_ :
         setattr(args, p, os.path.join(args.path_prefix, getattr(args, p)))
@@ -264,9 +265,6 @@ if __name__ == '__main__':
 #*******************************************************************************
     print(args)
     print('The Training of Experiment')
-
-    # writer = SummaryWriter(log_dir=os.path.join(args.logs_folder, args.exp_name))
-
 
     #init textlog
     log = Logger(args.id+"_" + str(datetime.today().date()), args.path_txtlog)
@@ -352,10 +350,6 @@ if __name__ == '__main__':
             np.random.set_state(data['numpy_rng_state'])
             random.setstate(data['random_rng_state'])
             model.load_state_dict(data['state_dict'], strict=False)
-            """
-            optim.load_state_dict(data['optimizer'])
-            scheduler.load_state_dict(data['scheduler'])
-            """
             start_epoch = data['epoch'] + 1
             best_cider = data['best_cider']
             best_test_cider = data['best_test_cider']
@@ -389,17 +383,15 @@ if __name__ == '__main__':
 
         log.write_log('epoch%d:\n' % e)
 
-        if not use_rl:
+        if  use_rl:
             train_loss = train_xe(model, dataloader_train, optim, text_field)
-            # writer.add_scalar('data/train_loss', train_loss, e)
+
             log.write_log('state = %s \n' % 'base_train')
             log.write_log(' train_loss = %f \n' % train_loss)
             
         else:
             train_loss, reward, reward_baseline = train_scst(model, dict_dataloader_train, optim_rl, cider_train, text_field)
-            # writer.add_scalar('data/train_loss', train_loss, e)
-            # writer.add_scalar('data/reward', reward, e)
-            # writer.add_scalar('data/reward_baseline', reward_baseline, e)
+
 
             log.write_log('state = %s \n' % 'rl_train')
             log.write_log(' train_loss = %f \n'%train_loss)
@@ -409,8 +401,7 @@ if __name__ == '__main__':
         
         # Validation loss
         val_loss ,mAP= evaluate_loss(model, dataloader_val, loss_fn, text_field)
-        # writer.add_scalar('data/val_loss', val_loss, e)
-        # writer.add_scalar('data/mAP', mAP, e)
+
 
         print(' mAP = %f \n' % mAP)
         log.write_log(' mAP = %f \n' % mAP)
@@ -421,11 +412,7 @@ if __name__ == '__main__':
         scores = evaluate_metrics(model, dict_dataloader_val, text_field)
         print("Validation scores", scores)
         val_cider = scores['CIDEr']
-        # writer.add_scalar('data/val_cider', val_cider, e)
-        # writer.add_scalar('data/val_bleu1', scores['BLEU'][0], e)
-        # writer.add_scalar('data/val_bleu4', scores['BLEU'][3], e) 
-        # writer.add_scalar('data/val_meteor', scores['METEOR'], e)
-        # writer.add_scalar('data/val_rouge', scores['ROUGE'], e)
+
 
         log.write_log('val_evaluation scores = %s' % str(scores))
         log.write_log("\n")
@@ -434,11 +421,7 @@ if __name__ == '__main__':
         scores = evaluate_metrics(model, dict_dataloader_test, text_field)
         print("Test scores", scores)
         test_cider = scores['CIDEr']
-        # writer.add_scalar('data/test_cider', test_cider, e)
-        # writer.add_scalar('data/test_bleu1', scores['BLEU'][0], e)
-        # writer.add_scalar('data/test_bleu4', scores['BLEU'][3], e)
-        # writer.add_scalar('data/test_meteor', scores['METEOR'], e)
-        # writer.add_scalar('data/test_rouge', scores['ROUGE'], e)
+
 
         log.write_log('test_evaluation scores = %s' % str(scores))
         log.write_log("\n")
