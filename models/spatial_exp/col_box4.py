@@ -41,6 +41,8 @@ class Transformer(CaptioningModel):
  
         self.init_weights()
 
+        self.backbone.load_model_()
+
 
     @property
     def d_model(self):

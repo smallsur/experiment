@@ -657,7 +657,7 @@ class Backbone(nn.Module):
         cfg.MODEL.RPN.BBOX_LOSS_WEIGHT = 1.0
         cfg.MODEL.ROI_BOX_HEAD.BBOX_LOSS_WEIGHT = 1.0
     
-    def _load_model(self):
+    def load_model_(self):
         self.backbone.load_state_dict(torch.load(self.path_))
 
 
