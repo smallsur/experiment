@@ -229,9 +229,7 @@ if __name__ == '__main__':
 
     loss_fn = NLLLoss(ignore_index=text_field.vocab.stoi['<pad>'])
 
-    use_rl = False
-    # best_cider = .0
-    # best_test_cider = 0.
+
     patience = 0
     start_epoch = 0
 
@@ -260,8 +258,6 @@ if __name__ == '__main__':
 
     for e in range(start_epoch, start_epoch + 100):
 
-        # dataloader_train = DataLoader(dataset=datasets['train'], collate_fn=datasets['train'].collate_fn(),
-        #                               batch_size=args.batch_size, shuffle=True,num_workers=args.workers,pin_memory=True)
         dict_dataloader_val = DataLoader(dataset=datasets_evalue['e_val'], collate_fn=datasets_evalue['e_val'].collate_fn(),
                                          batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
         
@@ -270,8 +266,8 @@ if __name__ == '__main__':
 
         log.write_log('epoch%d:\n' % e)
 
-        # train_loss = train_xe(model, dict_dataloader_train, optim, text_field)
-        # log.write_log(' train_loss = %f \n' % train_loss)
+        train_loss = train_xe(model, dict_dataloader_train, optim, text_field)
+        log.write_log(' train_loss = %f \n' % train_loss)
                    
         # Validation loss
         mAP= evaluate_loss(model, dict_dataloader_val, loss_fn, text_field)
@@ -286,7 +282,7 @@ if __name__ == '__main__':
         best = False
 
         if mAP >= best_map:
-            best_cider = mAP
+            best_map = mAP
             best = True
 
         torch.save({
