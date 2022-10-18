@@ -13,8 +13,7 @@ from detectron2.config import CfgNode as CN
 
 class Backbone(nn.Module):
 
-    def __init__(self, args, train_backbone=False, pixel_mean = [103.53, 116.28, 123.675], 
-                    pixel_std = [57.375, 57.12, 58.395], d_model = 256, last_dim=2048, return_interm_layers=True):
+    def __init__(self, args, train_backbone=False,  d_model = 256, last_dim=2048, return_interm_layers=True):
 
         super(Backbone, self).__init__()
 
@@ -30,7 +29,7 @@ class Backbone(nn.Module):
         if return_interm_layers:
             self.return_layers = {"res3": "0", "res4": "1", "res5": "2"}
         else:
-            self.return_layers = {"res5": "2"}
+            self.return_layers = {"res5": "0"}
 
         self.body = IntermediateLayerGetter(self.backbone, return_layers=self.return_layers)
 
@@ -85,11 +84,13 @@ class Backbone(nn.Module):
         xs = self.body(x)
         outs = []
         poses = []
-        masks = [mask,]
+        masks = []
         for name, x in xs.items():
-            pos = self.pos_enc(x, mask)
+            mask_ = F.interpolate(mask[None].float(), size=x.shape[-2:]).to(torch.bool)[0]
+            pos = self.pos_enc(x, mask_)
             poses.append(pos)
             outs.append(x)
+            masks.append(mask_)
         return outs, masks, poses
         
     def forward(self, x, mask):

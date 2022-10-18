@@ -235,11 +235,12 @@ class Detr_Transformer(nn.Module):
         assert len(features) == 1
         src = features[-1]
         pos_embed = poses[-1]
+        masks = masks[-1]
 
         src = self.input_proj(src)
+        bs, c, h, w = src.shape
         src = src.flatten(2).permute(2, 0, 1)#805*2*256
 
-        bs, c, h, w = src.shape
         pos_embed = pos_embed.flatten(2).permute(2, 0, 1)
 
         query_emb = self.query_embed.weight
@@ -262,7 +263,7 @@ class Detr_Transformer(nn.Module):
         if self.aux_outputs:
             out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
 
-        return out, hs, query_emb
+        return out, hs[-1], query_emb
 
 
     @torch.jit.unused

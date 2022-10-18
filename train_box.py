@@ -270,8 +270,8 @@ if __name__ == '__main__':
 
         log.write_log('epoch%d:\n' % e)
 
-        train_loss = train_xe(model, dict_dataloader_train, optim, text_field)
-        log.write_log(' train_loss = %f \n' % train_loss)
+        # train_loss = train_xe(model, dict_dataloader_train, optim, text_field)
+        # log.write_log(' train_loss = %f \n' % train_loss)
                    
         # Validation loss
         mAP= evaluate_loss(model, dict_dataloader_val, loss_fn, text_field)
