@@ -76,6 +76,8 @@ class Encoder(nn.Module):
                                   for _ in range(N)])
         self.N = N
 
+        self.norm = norm
+
 
     def forward(self, input, attention_mask=None, attention_weights=None, pos_grid=None):
 
@@ -99,6 +101,7 @@ class Decoder(nn.Module):
 
         self.N = N_dec
         self.aux_outputs = aux_outputs
+        
 
     def forward(self, tgt, encoder_output, mask_enc, pos_grid, pos_emb):
 
@@ -165,9 +168,9 @@ class Detr_Transformer(nn.Module):
 
         bs = features.shape[0]
 
-        input = self.input_proj(features).permute(0, 3, 1, 2).contiguous().view(bs, -1, self.d_model)#输入
+        input = self.input_proj(features).permute(0, 2, 3, 1).contiguous().view(bs, -1, self.d_model)#输入
 
-        pos_grid = self.pos_enc(features, masks).view(bs, -1, self.d_model)
+        pos_grid = self.pos_enc(features, masks).permute(0, 2, 3, 1).contiguous().view(bs, -1, self.d_model)
 
         mask_enc = masks.view(bs, -1).unsqueeze(1).unsqueeze(1)
 

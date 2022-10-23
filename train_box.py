@@ -110,11 +110,11 @@ if __name__ == '__main__':
     parser.add_argument('--head', type=int, default=8)
     parser.add_argument('--warmup', type=int, default=10000)
     parser.add_argument('--position_embedding', type=str, default='sine',help='sine or learned')
-    # parser.add_argument('--resume_last', action='store_true')
-    parser.add_argument('--resume_last', default=True)
+    parser.add_argument('--resume_last', action='store_true')
+    # parser.add_argument('--resume_last', default=True)
     parser.add_argument('--resume_best', action='store_true')
 
-    parser.add_argument('--features_path', type=str, default='Datasets/X101-features/coco_X101_grid.hdf5')
+    parser.add_argument('--features_path', type=str, default='Datasets/X101-features/coco_X101_grid.hdf5')#grid_feature_32.hdf5
     parser.add_argument('--annotation_folder', type=str, default='Datasets/m2_annotations/')
     parser.add_argument('--dir_to_save_model', type=str, default='saved_transformer_models/')
     parser.add_argument('--logs_folder', type=str, default='transformer_tensorboard_logs')

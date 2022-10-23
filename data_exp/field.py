@@ -129,7 +129,7 @@ class ImageDetectionsField(RawField):
         # elif delta < 0:
         #     precomp_data = precomp_data[:self.max_detections]
 
-        return precomp_data.astype(np.float32)
+        return torch.from_numpy(precomp_data)
 
 
     # def preprocess(self, x):
@@ -155,7 +155,7 @@ class ImageDetectionsField(RawField):
 def generate_mask(tensor_list):
 
     if tensor_list[0].ndim == 3:
-        d_model = tensor_list[0].shape[1]
+        d_model = tensor_list[0].shape[0]
         max_size = _max_by_axis([list(img.shape[-2:]) for img in tensor_list])
         batch_shape = [len(tensor_list)] + [d_model] + max_size
         b, d, h, w = batch_shape
@@ -164,9 +164,9 @@ def generate_mask(tensor_list):
         tensor = torch.zeros(batch_shape, dtype=dtype, device=device)
         mask = torch.ones((b, h, w), dtype=torch.bool, device=device)
         for img, pad_img, m in zip(tensor_list, tensor, mask):
-            pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
+            pad_img[: , : img.shape[1], : img.shape[2]].copy_(img)
             m[: img.shape[1], :img.shape[2]] = False
-            
+
     else:
         raise ValueError('not supported')
     return tensor, mask
