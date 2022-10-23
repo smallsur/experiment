@@ -6,14 +6,11 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.nn import NLLLoss
 from tqdm import tqdm
 from datetime import datetime
-from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 import argparse
 import os
 import pickle
 import numpy as np
-import itertools
-import multiprocessing
 import random
 from shutil import copyfile
 import warnings
@@ -25,7 +22,6 @@ from utils import Logger
 
 import models.spatial_exp
 from models.build import BuildModel
-from models.spatial_exp.evalue_box import evalue_box
 
 
 random.seed(1234)
@@ -39,7 +35,7 @@ import sys
 sys.path.append(os.path.join(os.getcwd(), '..',))
 
 
-def evaluate_loss(model, dataloader, loss_fn, text_field):
+def evaluate_loss(model, dataloader):
 
     # Validation loss
     model.eval()
@@ -66,7 +62,7 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
 
 
 
-def train_xe(model, dataloader, optim, text_field):
+def train_xe(model, dataloader, optim):
     # Training with cross-entropy
     model.train()
     scheduler.step()
@@ -110,13 +106,14 @@ if __name__ == '__main__':
     device = torch.device('cuda')
     parser = argparse.ArgumentParser(description='Experiment_Train')
     parser.add_argument('--exp_name', type=str, default='Experiment')
-    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=5)
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--m', type=int, default=40)
     parser.add_argument('--head', type=int, default=8)
     parser.add_argument('--warmup', type=int, default=10000)
     parser.add_argument('--position_embedding', type=str, default='sine',help='sine or learned')
-    parser.add_argument('--resume_last', action='store_true')
+    # parser.add_argument('--resume_last', action='store_true')
+    parser.add_argument('--resume_last', default=True)
     parser.add_argument('--resume_best', action='store_true')
 
     parser.add_argument('--features_path', type=str, default='Datasets/X101-features/coco_X101_grid.hdf5')
@@ -208,19 +205,6 @@ if __name__ == '__main__':
         else:
             lr = args.xe_base_lr * 0.2 * 0.2
         return lr
-    
-    def lambda_lr_rl(s):
-        refine_epoch = args.refine_epoch_rl 
-        print("rl_s:", s)
-        if s <= refine_epoch:
-            lr = args.rl_base_lr
-        elif s <= refine_epoch + 3:
-            lr = args.rl_base_lr * 0.2
-        elif s <= refine_epoch + 6:
-            lr = args.rl_base_lr * 0.2 * 0.2
-        else:
-            lr = args.rl_base_lr * 0.2 * 0.2 * 0.2
-        return lr
 
     # Initial conditions
     optim = Adam(model.parameters(), lr=1, betas=(0.9, 0.98))
@@ -266,11 +250,11 @@ if __name__ == '__main__':
 
         log.write_log('epoch%d:\n' % e)
 
-        train_loss = train_xe(model, dict_dataloader_train, optim, text_field)
+        train_loss = train_xe(model, dict_dataloader_train, optim)
         log.write_log(' train_loss = %f \n' % train_loss)
                    
         # Validation loss
-        mAP= evaluate_loss(model, dict_dataloader_val, loss_fn, text_field)
+        mAP= evaluate_loss(model, dict_dataloader_val)
 
         print(' mAP = %f \n' % mAP)
         log.write_log(' mAP = %f \n' % mAP)

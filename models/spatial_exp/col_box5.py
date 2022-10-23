@@ -10,7 +10,7 @@ from models.build import BuildModel
 
 from .detr import Detr_Transformer
 from models.captioning_model import CaptioningModel
-from .backbone import Backbone
+from .backbone import Backbone,Backbone_Resnet
 
 
 from .evalue_box import evalue_box
@@ -37,19 +37,14 @@ class Transformer(CaptioningModel):
         self.backbone = backbone
         self.box_backbone = box_backbone
  
-        self.init_weights()
+        # self.init_weights()
 
-        self.backbone.load_model_()
+        # self.backbone.load_model_()
 
 
     @property
     def d_model(self):
         return self.box_backbone.d_model
-
-    def init_weights(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
 
     def forward(self, features, masks, only_box = False):
 
