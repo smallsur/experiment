@@ -268,7 +268,7 @@ class Detr_Transformer(nn.Module):
     def __init__(self, d_model=512, h=8, num_enc=6, num_dec=6, d_ff=2048, dropout=0.1,
                      scales=4, k=4, last_feat_height=16, last_feat_width=16, 
                     num_classes=1601, aux_outputs=False, num_queries=100, norm =True):
-        super().__init__()
+        super(Detr_Transformer, self).__init__()
 
         self.d_model = d_model
         self.norm = None

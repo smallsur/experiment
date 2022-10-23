@@ -11,7 +11,9 @@ from .attention import MultiHeadAttention
 from .position_encoding import build_position_encoding
 from models.transformer.utils import sinusoid_encoding_table
 from models.containers import ModuleList, Module
+
 from models.build import BuildModel
+
 from models.transformer.utils import PositionWiseFeedForward
 from models.captioning_model import CaptioningModel
 from .matcher import build_matcher
@@ -232,7 +234,7 @@ class MultiLevelEncoder_Cap(nn.Module):
         return out
 
 
-class DecoderLayer_Box(Module):
+class DecoderLayer_Box(nn.Module):
     def __init__(self, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1):
         super(DecoderLayer_Box, self).__init__()
 
@@ -315,7 +317,7 @@ class DecoderLayer_Caption(Module):
         return ff
 
 
-class Decoder_Box(Module):
+class Decoder_Box(nn.Module):
     def __init__(self, N_dec, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1, num_queries=100,
                  num_classes=1601, aux_outputs=False):
         super(Decoder_Box, self).__init__()

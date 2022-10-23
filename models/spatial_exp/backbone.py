@@ -84,7 +84,6 @@ class Backbone(nn.Module):
             self.c6_conv = nn.Conv2d(last_dim, d_model, kernel_size=(3,3), stride=2)
             self.pos_scale = build_scale_embedding(4, d_model)
 
-
         self.return_interm_layers = return_interm_layers
 
     def forword_deformable_detr(self, x, mask):

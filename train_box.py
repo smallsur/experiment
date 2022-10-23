@@ -43,8 +43,6 @@ def evaluate_loss(model, dataloader):
     with tqdm(desc='Epoch %d - validation' % e, unit='it', total=len(dataloader)) as pbar:
         with torch.no_grad():
             for it, (detections,targets, captions) in enumerate(dataloader):
-                # targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
-
                 features = detections['batch'].to(device)
                 masks = detections['mask'].to(device)
 

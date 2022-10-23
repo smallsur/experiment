@@ -193,7 +193,7 @@ class Decoder_Box(nn.Module):
 class Detr_Transformer(nn.Module):
     def __init__(self, d_model=512, h=8, num_enc=6, num_dec=6, d_ff=2048, dropout=0.1,
                     num_classes=1601, aux_outputs=False, num_queries=100, norm =True, num_channels = 2048):
-        super().__init__()
+        super(Detr_Transformer, self).__init__()
 
         self.d_model = d_model
         self.nhead = h
