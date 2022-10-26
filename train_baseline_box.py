@@ -209,7 +209,7 @@ if __name__ == '__main__':
     parser.add_argument('--position_embedding', type=str, default='sine',help='sine or learned')
     parser.add_argument('--resume_last', action='store_true')
     parser.add_argument('--resume_best', action='store_true')
-
+    parser.add_argument('--language_model_path', type=str, default='pretrained_models/language_context.pth')
     parser.add_argument('--features_path', type=str, default='Datasets/X101-features/coco_X101_grid.hdf5')
     parser.add_argument('--annotation_folder', type=str, default='Datasets/m2_annotations/')
     parser.add_argument('--dir_to_save_model', type=str, default='saved_transformer_models/')
@@ -258,7 +258,7 @@ if __name__ == '__main__':
     if args.web:
         args.path_prefix = args.path_prefix_web
 
-    path_ = ['image_path', 'features_path', 'annotation_folder', 'dir_to_save_model', 'logs_folder', 'path_vocab', 'path_txtlog', 'dect_path']
+    path_ = ['language_model_path', 'image_path', 'features_path', 'annotation_folder', 'dir_to_save_model', 'logs_folder', 'path_vocab', 'path_txtlog', 'dect_path']
 
     for p in path_ :
         setattr(args, p, os.path.join(args.path_prefix, getattr(args, p)))
