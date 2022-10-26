@@ -72,7 +72,7 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.layers = nn.ModuleList([EncoderLayer(d_model, d_k, d_v, h, d_ff, dropout,
                                                    identity_map_reordering=identity_map_reordering)
-                                  for _ in range(N)])
+                                  for _ in range(N_enc)])
         self.N = N_enc
 
         self.norm = norm
