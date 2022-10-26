@@ -115,7 +115,7 @@ class Layer_Incor_offset(nn.Module):
 
         self.pwff = PositionWiseFeedForward(d_model, d_ff, dropout, identity_map_reordering=identity_map_reordering)
         self.dropout = nn.Dropout(dropout)
-        self.norm = nn.Norm(d_model)
+        self.norm = nn.LayerNorm(d_model)
 
     def with_pos_embed(self, tensor, pos):
         return tensor if pos is None else tensor + pos
@@ -188,12 +188,12 @@ class MultiLevelEncoder_Cap(nn.Module):
                                   for _ in range(N)])
 
         self.att_layers = ModuleList([Layer_Incor_offset(h=h, d_model=d_model, d_k=d_k, k=k, 
-                                                last_feat_height=feat_height, last_feat_width=feat_width, scales=scales,dropout=dropout)])
+                                                 scales=scales,dropout=dropout)])
         
         self.N = N
         self.padding_idx = padding_idx
-        self.feat_height = feat_height
-        self.feat_width = feat_width
+        # self.feat_height = feat_height
+        # self.feat_width = feat_width
         self.k = k
         self.scales = scales
 

@@ -44,7 +44,7 @@ class ShiftLayer(nn.Module):
 
         self.pwff = PositionWiseFeedForward(d_model, d_ff, dropout, identity_map_reordering=identity_map_reordering)
         self.dropout = nn.Dropout(dropout)
-        self.norm = nn.Norm(d_model)
+        self.norm = nn.LayerNorm(d_model)
 
     def with_pos_embed(self, tensor, pos):
         return tensor if pos is None else tensor + pos
@@ -70,7 +70,7 @@ class ShiftLayer(nn.Module):
                                                                 src_key_padding_masks,
                                                                 poses,
                                                                 src_querys):
-            out, _ = self.mhatt(src, src_tensors, ref_point,query_mask=src_key_padding_mask, key_masks=src_key_padding_masks, src_query=src_query)
+            out = self.mhatt(src, src_tensors, ref_point,query_mask=src_key_padding_mask, key_masks=src_key_padding_masks, src_query=src_query)
             src = src + self.dropout(out)
             src = self.norm(src)
             src = self.pwff(src)
@@ -94,7 +94,7 @@ class Encoder(nn.Module):
                                   for _ in range(N)])
 
         self.att_layers = nn.ModuleList([ShiftLayer(h=h, d_model=d_model, d_k=d_k, k=k, 
-                                                last_feat_height=feat_height, last_feat_width=feat_width, scales=scales,dropout=dropout)])
+                                                 scales=scales,dropout=dropout) for _ in range(N)])
         
         self.N = N
         self.padding_idx = padding_idx
@@ -120,9 +120,9 @@ class Encoder(nn.Module):
             pos_ = pos.view(bs, self.feat_height, self.feat_width, -1)
             ref_points = [ref_point,]
 
-            for i in range(len(ref_points)):
-                ref_points[i] = ref_points[i].type_as(input)
-                ref_points[i] = ref_points[i].unsqueeze(0).repeat(bs, 1, 1, 1)
+            for j in range(len(ref_points)):
+                ref_points[j] = ref_points[j].type_as(input)
+                ref_points[j] = ref_points[j].unsqueeze(0).repeat(bs, 1, 1, 1)
 
             src_tensors = [src, ]
             src_masks = [mask_, ]
@@ -160,7 +160,6 @@ class DecoderLayer(Module):
         self_att = self.lnorm1(input + self.dropout1(self_att))
         self_att = self_att * mask_pad
 
-        # enc_att = self.enc_att(self_att, enc_output, enc_output, mask_enc_att)
 
         cross_ = enc_output
         if self.cross_ == 'concat':
@@ -174,9 +173,6 @@ class DecoderLayer(Module):
         enc_att = self.lnorm2(self_att + self.dropout2(enc_att))
         enc_att = enc_att * mask_pad
 
-        # box_att = self.box_att(enc_att,box_lastlayer,box_lastlayer)
-        # box_att = self.lnorm3(enc_att + self.dropout3(box_att))
-        # box_att = box_att * mask_pad
 
         ff = self.pwff(enc_att)
         ff = ff * mask_pad

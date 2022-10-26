@@ -67,13 +67,13 @@ class DecoderLayer(nn.Module):
         return ff
 
 class Encoder(nn.Module):
-    def __init__(self, N,  d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1, 
+    def __init__(self, N_enc,  d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1, 
                  identity_map_reordering=False, norm=None):
         super(Encoder, self).__init__()
         self.layers = nn.ModuleList([EncoderLayer(d_model, d_k, d_v, h, d_ff, dropout,
                                                    identity_map_reordering=identity_map_reordering)
                                   for _ in range(N)])
-        self.N = N
+        self.N = N_enc
 
         self.norm = norm
 
@@ -135,7 +135,7 @@ class Detr_Transformer(nn.Module):
         if norm:
             self.norm = nn.LayerNorm(d_model)
 
-        self.encoder = Encoder(N_dec=num_enc, norm=self.norm, d_model=d_model, h=h, d_ff=d_ff, dropout=dropout)
+        self.encoder = Encoder(N_enc=num_enc, norm=self.norm, d_model=d_model, h=h, d_ff=d_ff, dropout=dropout)
         self.decoder = Decoder(N_dec=num_dec, norm=self.norm, d_model=d_model, dropout=dropout, d_ff=d_ff, h=h, 
                                 aux_outputs=aux_outputs)
 
@@ -180,7 +180,7 @@ class Detr_Transformer(nn.Module):
 
         tgt = torch.zeros_like(pos_emb)
 
-        memory = self.encoder(input, attention_mask=mask_enc, pos_grid=pos_grid)
+        memory = self.encoder(features, attention_mask=mask_enc, pos_grid=pos_grid)
         hs = self.decoder(tgt, memory, mask_enc, pos_grid=pos_grid, pos_emb=pos_emb)
 
         outputs_class = self.class_embed(hs)
