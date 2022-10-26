@@ -245,6 +245,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--aux_outputs', type=bool, default=False)
     parser.add_argument('--box_in_lr', type=bool, default=False)
+    parser.add_argument('--add_features', type=bool, default=False)
 
     args = parser.parse_args()
 

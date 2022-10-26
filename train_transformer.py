@@ -327,18 +327,18 @@ if __name__ == '__main__':
         dict_dataloader_val = DataLoader(dict_dataset_val, batch_size=args.batch_size // 5)
         dict_dataloader_test = DataLoader(dict_dataset_test, batch_size=args.batch_size // 5)
 
-        # if not use_rl:
-        #     train_loss = train_xe(model, dataloader_train, optim, text_field)
-        #     writer.add_scalar('data/train_loss', train_loss, e)
-        # else:
-        #     train_loss, reward, reward_baseline = train_scst(model, dict_dataloader_train, optim_rl, cider_train, text_field)
-        #     writer.add_scalar('data/train_loss', train_loss, e)
-        #     writer.add_scalar('data/reward', reward, e)
-        #     writer.add_scalar('data/reward_baseline', reward_baseline, e)
+        if not use_rl:
+            train_loss = train_xe(model, dataloader_train, optim, text_field)
+            writer.add_scalar('data/train_loss', train_loss, e)
+        else:
+            train_loss, reward, reward_baseline = train_scst(model, dict_dataloader_train, optim_rl, cider_train, text_field)
+            writer.add_scalar('data/train_loss', train_loss, e)
+            writer.add_scalar('data/reward', reward, e)
+            writer.add_scalar('data/reward_baseline', reward_baseline, e)
 
-        # # Validation loss
-        # val_loss = evaluate_loss(model, dataloader_val, loss_fn, text_field)
-        # writer.add_scalar('data/val_loss', val_loss, e)
+        # Validation loss
+        val_loss = evaluate_loss(model, dataloader_val, loss_fn, text_field)
+        writer.add_scalar('data/val_loss', val_loss, e)
 
         # Validation scores
         scores = evaluate_metrics(model, dict_dataloader_val, text_field)

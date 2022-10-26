@@ -48,7 +48,7 @@ def evaluate_loss(model, dataloader):
 
                 # if e == 0:#在第一个周期生成ground-truth
                 ids,sizes = model.dump_gt(targets,boxfield)
-                targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
+                #targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
                 box_out= model(features, masks)
                 model.dump_dt(box_out,ids,sizes)
                 pbar.update()
@@ -240,6 +240,8 @@ if __name__ == '__main__':
 
     for e in range(start_epoch, start_epoch + 100):
 
+        dataloader_train = DataLoader(dataset=datasets['train'], collate_fn=datasets['train'].collate_fn(),
+                                      batch_size=args.batch_size, shuffle=True,num_workers=args.workers,pin_memory=True)
         dict_dataloader_val = DataLoader(dataset=datasets_evalue['e_val'], collate_fn=datasets_evalue['e_val'].collate_fn(),
                                          batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
         

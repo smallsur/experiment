@@ -11,7 +11,6 @@ from .postprocess import PostProcess
 from .matcher import build_matcher
 
 from models.transformer import MLP, MultiHeadAttention, PositionWiseFeedForward
-from .position_encoding import build_position_encoding
 
 
 class EncoderLayer(nn.Module):
@@ -123,11 +122,13 @@ class Decoder(nn.Module):
 
 class Detr_Transformer(nn.Module):
     def __init__(self, d_model=512, h=8, num_enc=6, num_dec=6, d_ff=2048, dropout=0.1,
-                    num_classes=1601, aux_outputs=False, num_queries=100, norm =True, num_channels = 2048):
+                    num_classes=1601, aux_outputs=False, num_queries=100, norm =True,
+                    sequential_input = False):
         super(Detr_Transformer,self).__init__()
 
         self.d_model = d_model
         self.nhead = h
+        self.sequential_input = sequential_input
 
         self.norm = None
 
@@ -146,13 +147,11 @@ class Detr_Transformer(nn.Module):
         self.bbox_embed = MLP(d_model, d_model, 4, 3)
         self.aux_outputs = aux_outputs
 
-        self.input_proj = nn.Conv2d(num_channels, d_model, kernel_size=1)
-
         self.build_loss()
 
         self.postProcess = PostProcess()
 
-        self.pos_enc = build_position_encoding(512, 'sine')
+        # self.pos_enc = build_position_encoding(512, 'sine')
 
         self._reset_parameters()
 
@@ -163,16 +162,18 @@ class Detr_Transformer(nn.Module):
                 nn.init.xavier_uniform_(p)
 
 
-
-    def forward(self, features, masks):
+    # def prepare_feature(self, features, masks, shape):
+    #     bs = masks.shape[0]
+    #     last_width, last_height = shape
+    #     # pos_grid = self.pos_enc(features, masks.squeeze(1).squeeze(1).view(bs, last_width, last_height)).permute(0, 2, 3, 1).contiguous().view(bs, -1, self.d_model)
+        
+    #     return features, masks
+        
+    def forward(self, features, masks, pos_grid):
 
         bs = features.shape[0]
 
-        input = self.input_proj(features).permute(0, 2, 3, 1).contiguous().view(bs, -1, self.d_model)#输入
-
-        pos_grid = self.pos_enc(features, masks).permute(0, 2, 3, 1).contiguous().view(bs, -1, self.d_model)
-
-        mask_enc = masks.view(bs, -1).unsqueeze(1).unsqueeze(1)
+        mask_enc = masks
 
         pos_emb = self.query_embed.weight
         pos_emb = pos_emb.unsqueeze(0).repeat(bs, 1, 1)

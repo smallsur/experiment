@@ -14,7 +14,8 @@ from .evalue_box import evalue_box
 def col_box_6(args):
 
     box_backbone = Detr_Transformer(d_model=256, h=8, num_enc=6, num_dec=6, d_ff=2048, dropout=0.1,
-                     num_classes=1601, aux_outputs=args.aux_outputs, num_queries=100, norm = False)
+                     num_classes=1601, aux_outputs=args.aux_outputs, num_queries=100, norm = False, 
+                     sequential_input=args.add_features)
 
     model = Transformer(bos_idx=2,  box_backbone=box_backbone, )
 

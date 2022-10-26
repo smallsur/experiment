@@ -61,3 +61,24 @@ class MLP(nn.Module):
         for i, layer in enumerate(self.layers):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
+
+def generate_ref_points(width: int,
+                        height: int):
+    grid_y, grid_x = torch.meshgrid(torch.arange(0, height), torch.arange(0, width))
+    grid_y = grid_y / (height - 1)
+    grid_x = grid_x / (width - 1)
+
+    grid = torch.stack((grid_x, grid_y), 2).float()
+    grid.requires_grad = False
+    return grid
+
+
+def restore_scale(width: int,
+                  height: int,
+                  ref_point: torch.Tensor):
+    new_point = ref_point.clone().detach()
+    new_point[..., 0] = new_point[..., 0] * (width - 1)
+    new_point[..., 1] = new_point[..., 1] * (height - 1)
+
+    return new_point
+
