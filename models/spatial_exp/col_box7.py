@@ -10,6 +10,7 @@ from .shfitcaption import Encoder, Decoder
 from .detr_local import Detr_Transformer
 from models.captioning_model import CaptioningModel
 from .position_encoding import build_position_encoding
+from models.rstnet.decoders import TransformerDecoderLayer
 
 from .evalue_box import evalue_box
 
@@ -23,7 +24,8 @@ def col_box_7(args):
 
     encoder = Encoder(3, 0)
 
-    decoder = Decoder(10201, 54, 3, 1, incor= 'single')
+    # decoder = Decoder(10201, 54, 3, 1, incor= 'single')
+    decoder = TransformerDecoderLayer(10201, 54, 3, 1,language_model_path=args.language_model_path)
 
     model = Transformer(bos_idx=2,  box_backbone=box_backbone, encoder=encoder, decoder=decoder, project=projectlayer)
 
