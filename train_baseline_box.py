@@ -56,7 +56,7 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
                 ids,sizes = model.dump_gt(targets,boxfield)
                 
                 targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
-                box_out,cap_out = model(detections, captions)
+                box_out,cap_out = model(detections, captions, shape=(7, 7))
                 model.dump_dt(box_out,ids,sizes)
                 captions_gt = captions[:, 1:].contiguous()
                 cap_out = cap_out[:, :-1].contiguous()
@@ -82,7 +82,7 @@ def evaluate_metrics(model, dataloader, text_field):
         for it, (images, targets, captions) in enumerate(iter(dataloader)):#(images, caps_gt)
             images = images.to(device)
             with torch.no_grad():
-                out, _ = model.beam_search(images, 20, text_field.vocab.stoi['<eos>'], 5, out_size=1)
+                out, _ = model.beam_search(images, 20, text_field.vocab.stoi['<eos>'], 5, out_size=1, shape=(7, 7))
             caps_gen = text_field.decode(out, join_words=False)
             for i, (gts_i, gen_i) in enumerate(zip(captions, caps_gen)):
                 gen_i = ' '.join([k for k, g in itertools.groupby(gen_i)])
@@ -108,7 +108,7 @@ def train_xe(model, dataloader, optim, text_field):
             targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
             detections,  captions = detections.to(device), captions.to(device) #batch len dim ,batch*
 
-            box_out,cap_out = model(detections, captions)#25,100,4 /// 25,100,1602
+            box_out,cap_out = model(detections, captions, shape=(7, 7))#25,100,4 /// 25,100,1602
 
             captions_gt = captions[:, 1:].contiguous()
             cap_out = cap_out[:, :-1].contiguous()
@@ -156,7 +156,7 @@ def train_scst(model, dataloader, optim, cider, text_field):
             detections = detections.to(device)
             targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets] if args.box_in_lr else targets
             outs, log_probs = model.beam_search(detections, seq_len, text_field.vocab.stoi['<eos>'],
-                                                beam_size, out_size=beam_size)
+                                                beam_size, out_size=beam_size,shape=(7, 7))
             if args.box_in_lr:
                 box_out = model(detections, caps_gt, only_box = True)
 
