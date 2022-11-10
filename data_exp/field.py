@@ -116,41 +116,58 @@ class ImageDetectionsField(RawField):
         image_id = int(x.split('_')[-1].split('.')[0])
         try:
             f = h5py.File(self.detections_path, 'r')
-            # precomp_data = f['%d_features' % image_id][()]
-            precomp_data = f['%d_grids' % image_id][()]
+            precomp_data = f['%d_features' % image_id][()]
         except KeyError:
             warnings.warn('Could not find detections for %d' % image_id)
             precomp_data = np.random.rand(10,2048)
 
-        # delta = self.max_detections - precomp_data.shape[0]
+        delta = self.max_detections - precomp_data.shape[0]
+        if delta > 0:
+            precomp_data = np.concatenate([precomp_data, np.zeros((delta, precomp_data.shape[1]))], axis=0)
+        elif delta < 0:
+            precomp_data = precomp_data[:self.max_detections]
 
-        # if delta > 0:
-        #     precomp_data = np.concatenate([precomp_data, np.zeros((delta, precomp_data.shape[1]))], axis=0)
-        # elif delta < 0:
-        #     precomp_data = precomp_data[:self.max_detections]
-
-        return torch.from_numpy(precomp_data)
-
-
-    # def preprocess(self, x):
-
-    #     path_= None
-
-    #     if 'train' in x:
-    #         path_ = os.path.join(self.images_path,'train2014',x)
-    #     else:
-    #         path_ = os.path.join(self.images_path,'val2014',x)
-
-    #     return self.transform(self._load_images(path_))
-
-    def process(self, batch):
-        # batch = [self.normalizer(x) for x in batch]
-        batch, mask = generate_mask(batch)
-        return {'batch': batch, 'mask': mask}
+        return precomp_data.astype(np.float32)
         
-    # def _load_images(self, path):
+    # def preprocess(self, x, avoid_precomp=False):
+    #     image_id = int(x.split('_')[-1].split('.')[0])
+    #     try:
+    #         f = h5py.File(self.detections_path, 'r')
+    #         # precomp_data = f['%d_features' % image_id][()]
+    #         precomp_data = f['%d_grids' % image_id][()]
+    #     except KeyError:
+    #         warnings.warn('Could not find detections for %d' % image_id)
+    #         precomp_data = np.random.rand(10,2048)
 
-    #     return Image.open(path).convert("RGB")
+    #     # delta = self.max_detections - precomp_data.shape[0]
+
+    #     # if delta > 0:
+    #     #     precomp_data = np.concatenate([precomp_data, np.zeros((delta, precomp_data.shape[1]))], axis=0)
+    #     # elif delta < 0:
+    #     #     precomp_data = precomp_data[:self.max_detections]
+
+    #     return torch.from_numpy(precomp_data)
+
+
+    # # def preprocess(self, x):
+
+    # #     path_= None
+
+    # #     if 'train' in x:
+    # #         path_ = os.path.join(self.images_path,'train2014',x)
+    # #     else:
+    # #         path_ = os.path.join(self.images_path,'val2014',x)
+
+    # #     return self.transform(self._load_images(path_))
+
+    # def process(self, batch):
+    #     # batch = [self.normalizer(x) for x in batch]
+    #     batch, mask = generate_mask(batch)
+    #     return {'batch': batch, 'mask': mask}
+        
+    # # def _load_images(self, path):
+
+    # #     return Image.open(path).convert("RGB")
     
 def generate_mask(tensor_list):
 

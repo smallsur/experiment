@@ -52,12 +52,10 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
             for it, (detections,targets, captions) in enumerate(dataloader):
                 detections, captions = detections.to(device), captions.to(device)
 
-                # if e == 0:#在第一个周期生成ground-truth
-                ids,sizes = model.dump_gt(targets,boxfield)
                 
                 targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
-                box_out,cap_out = model(detections, captions, shape=(7, 7))
-                model.dump_dt(box_out,ids,sizes)
+                box_out,cap_out = model(detections, captions)
+
                 captions_gt = captions[:, 1:].contiguous()
                 cap_out = cap_out[:, :-1].contiguous()
                 loss_cap = loss_fn(cap_out.view(-1, len(text_field.vocab)), captions_gt.view(-1))
@@ -67,8 +65,7 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
                 pbar.set_postfix(loss=running_loss / (it + 1))
                 pbar.update()
     mAP = 0
-    if e % 4 == 0:
-        mAP = model.evalue_box_(args)
+
     val_loss = running_loss / len(dataloader)
     return val_loss,mAP
 
@@ -82,7 +79,7 @@ def evaluate_metrics(model, dataloader, text_field):
         for it, (images, targets, captions) in enumerate(iter(dataloader)):#(images, caps_gt)
             images = images.to(device)
             with torch.no_grad():
-                out, _ = model.beam_search(images, 20, text_field.vocab.stoi['<eos>'], 5, out_size=1, shape=(7, 7))
+                out, _ = model.beam_search(images, 20, text_field.vocab.stoi['<eos>'], 5, out_size=1)
             caps_gen = text_field.decode(out, join_words=False)
             for i, (gts_i, gen_i) in enumerate(zip(captions, caps_gen)):
                 gen_i = ' '.join([k for k, g in itertools.groupby(gen_i)])
@@ -108,7 +105,7 @@ def train_xe(model, dataloader, optim, text_field):
             targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets]
             detections,  captions = detections.to(device), captions.to(device) #batch len dim ,batch*
 
-            box_out,cap_out = model(detections, captions, shape=(7, 7))#25,100,4 /// 25,100,1602
+            box_out,cap_out = model(detections, captions)#25,100,4 /// 25,100,1602
 
             captions_gt = captions[:, 1:].contiguous()
             cap_out = cap_out[:, :-1].contiguous()
@@ -156,12 +153,10 @@ def train_scst(model, dataloader, optim, cider, text_field):
             detections = detections.to(device)
             targets = [{k: v.to(device) for k, v in t.items() if k != 'id'} for t in targets] if args.box_in_lr else targets
             outs, log_probs = model.beam_search(detections, seq_len, text_field.vocab.stoi['<eos>'],
-                                                beam_size, out_size=beam_size,shape=(7, 7))
+                                                beam_size, out_size=beam_size)
             if args.box_in_lr:
                 box_out = model(detections, caps_gt, only_box = True)
 
-                
-            
             optim.zero_grad()
 
             # Rewards
@@ -202,7 +197,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Experiment_Train')
     parser.add_argument('--exp_name', type=str, default='Experiment')
     parser.add_argument('--batch_size', type=int, default=25)
-    parser.add_argument('--workers', type=int, default=0)
+    parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--m', type=int, default=40)
     parser.add_argument('--head', type=int, default=8)
     parser.add_argument('--warmup', type=int, default=10000)
@@ -240,7 +235,7 @@ if __name__ == '__main__':
 
     #参数调整
     parser.add_argument('--id', type=str, default='default')
-    parser.add_argument('--model', type=int, default=5)
+    parser.add_argument('--model', type=int, default=9)
     parser.add_argument('--web', type=bool, default=False)
     parser.add_argument('--gpu_id', type=int, default=0)
     parser.add_argument('--aux_outputs', type=bool, default=False)
@@ -253,7 +248,7 @@ if __name__ == '__main__':
     
     print("现在正在使用的GPU编号:", end="")
     print(torch.cuda.current_device())
-    
+
 #*******************************************************************************
     if args.web:
         args.path_prefix = args.path_prefix_web
@@ -384,7 +379,7 @@ if __name__ == '__main__':
 
         log.write_log('epoch%d:\n' % e)
 
-        if  use_rl:
+        if  not  use_rl:
             train_loss = train_xe(model, dataloader_train, optim, text_field)
 
             log.write_log('state = %s \n' % 'base_train')
@@ -392,7 +387,6 @@ if __name__ == '__main__':
             
         else:
             train_loss, reward, reward_baseline = train_scst(model, dict_dataloader_train, optim_rl, cider_train, text_field)
-
 
             log.write_log('state = %s \n' % 'rl_train')
             log.write_log(' train_loss = %f \n'%train_loss)
@@ -514,11 +508,6 @@ if __name__ == '__main__':
         if best_test:
             copyfile(os.path.join(args.dir_to_save_model, '%s_last.pth' % args.exp_name), os.path.join(args.dir_to_save_model, '%s_best_test.pth' % args.exp_name))
 
-
-#         # 保存模型，用于微调
-#         if e >= 25:
-#             copyfile(os.path.join(args.dir_to_save_model, '%s_last.pth' % args.exp_name), os.path.join(args.dir_to_save_model, '{}_{}.pth'.format(args.exp_name, e)))
-
         if exit_train:
-            # writer.close()
+
             break

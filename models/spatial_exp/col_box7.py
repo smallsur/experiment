@@ -24,8 +24,8 @@ def col_box_7(args):
 
     encoder = Encoder(3, 0)
 
-    # decoder = Decoder(10201, 54, 3, 1, incor= 'single')
-    decoder = TransformerDecoderLayer(10201, 54, 3, 1,language_model_path=args.language_model_path)
+    decoder = Decoder(10201, 54, 3, 1, incor= 'single')
+    # decoder = TransformerDecoderLayer(10201, 54, 3, 1,language_model_path=args.language_model_path)
 
     model = Transformer(bos_idx=2,  box_backbone=box_backbone, encoder=encoder, decoder=decoder, project=projectlayer)
 
@@ -44,16 +44,19 @@ class ProjectLayer(nn.Module):
 
         self.d_model =d_model
     
-    def forward(self, features, masks, shape):
+    def forward(self, features, shape):
         bs = features.shape[0]
+        mask = (torch.sum(features, -1) == 0)
         last_width, last_height = shape
-        pos_grid = self.pos_enc(features, masks.squeeze(1).squeeze(1).view(bs, last_width, last_height)).permute(0, 2, 3, 1).contiguous().view(bs, -1, self.d_model)
+        pos_grid = self.pos_enc(features, mask.view(bs, last_width, last_height)).permute(0, 2, 3, 1).contiguous().view(bs, -1, self.d_model)
 
         out = F.relu(self.fc(features))
         out = self.drop(out)
         out = self.layer_norm(out)
 
-        return out, pos_grid
+        mask = mask.unsqueeze(1).unsqueeze(1)
+
+        return out, pos_grid, mask
 
 
 class Transformer(CaptioningModel):
@@ -71,9 +74,9 @@ class Transformer(CaptioningModel):
         self.project = project
 
         self.register_state('enc_out', None)
-        self.register_state('pos_grid_cap', None)
-        self.register_state('mask_enc_cap', None)
-
+        self.register_state('pos_grid', None)
+        self.register_state('mask_enc', None)
+        self.register_state('box_last', None)
         self.init_weights()
 
 
@@ -86,38 +89,17 @@ class Transformer(CaptioningModel):
     def d_model(self):
         return self.decoder.d_model
 
-    def forward(self, features, seq, shape, only_box = False, mask_enc_box=None):
-        features_box, features_cap =None, None
+    def forward(self, images, seq, only_box = False):
+        features, pos_grid, mask_enc = self.project(images, (7,7))
 
-        if isinstance(features,torch.Tensor):
-            features_box = features
-            features_cap = features
-        else:
-            features_box, features_cap = features
-
-        
-        mask_enc_cap = (torch.sum(features_cap, -1) == self.padding_idx).unsqueeze(1).unsqueeze(1)
-
-        if self.sequential_input:
-            mask_enc_box = mask_enc_cap
-
-        features_cap, pos_grid_cap = self.project(features_cap, mask_enc_cap, (7, 7))
-        features_box, pos_grid_box = self.project(features_box, mask_enc_box, shape=shape)
-
-        if self.sequential_input:
-            f_, m_, p_= features_cap, mask_enc_cap, pos_grid_cap
-        else:
-            f_, m_, p_ = features_box, mask_enc_box, pos_grid_box
-
-        out, box_lastlayer, pos_emb = self.box_backbone.forward(f_, m_, p_)
+        box_out, box_last, pos_emb = self.box_backbone(features, mask_enc, pos_grid)
 
         if only_box:
-            return out
-        
-        enc_out = self.encoder(input=features_cap, attention_mask=mask_enc_cap, pos=pos_grid_cap,  box_output=box_lastlayer, pos_emb=pos_emb)
-        dec_out = self.decoder(input=seq, encoder_output=enc_out,  mask_encoder=mask_enc_cap, pos=pos_grid_cap)
-        
-        return out, dec_out
+            return box_out
+        enc_out = self.encoder(features, mask_enc, pos_grid, attention_weights=None, box_output=box_last, pos_emb = pos_emb)
+        dec_out = self.decoder(seq, enc_out, box_last, mask_enc, pos_grid =pos_grid)
+
+        return box_out, dec_out
 
 
     def step(self, t, prev_output, visual, seq, mode='teacher_forcing', **kwargs):
@@ -126,28 +108,11 @@ class Transformer(CaptioningModel):
             raise NotImplementedError
         elif mode == 'feedback':
             if t == 0:
-                shape = kwargs['shape']
-                features_box, features_cap =None, None
-                if not isinstance(visual,list):
-                    features_box = visual
-                    features_cap = visual
-                else:
-                    features_box, features_cap = visual
+                features, self.pos_grid, self.mask_enc = self.project(visual, (7,7))
 
-                self.mask_enc_cap = (torch.sum(features_cap, -1) == self.padding_idx).unsqueeze(1).unsqueeze(1)
-                if self.sequential_input:
-                    mask_enc_box = self.mask_enc_cap
-                features_cap, self.pos_grid_cap = self.project(features_cap, self.mask_enc_cap, (7, 7))
-                features_box, pos_grid_box = self.project(features_box, mask_enc_box, shape)
+                _, self.box_last, pos_emb = self.box_backbone(features, self.mask_enc, self.pos_grid)
 
-                if self.sequential_input:
-                    f_, m_, p_= features_cap, self.mask_enc_cap, self.pos_grid_cap
-                else:
-                    f_, m_, p_ = features_box, mask_enc_box, pos_grid_box
-
-                _, box_lastlayer, pos_emb = self.box_backbone.forward(f_, m_, p_)
-                self.enc_out = self.encoder(input=features_cap, attention_mask=self.mask_enc_cap, pos=self.pos_grid_cap,  box_output=box_lastlayer, pos_emb=pos_emb)
-
+                self.enc_out = self.encoder(features, self.mask_enc, self.pos_grid, attention_weights=None, box_output=self.box_last, pos_emb = pos_emb)
                 if isinstance(visual, torch.Tensor):
                     it = visual.data.new_full((visual.shape[0], 1), self.bos_idx).long()
                 else:
@@ -155,7 +120,7 @@ class Transformer(CaptioningModel):
             else:
                 it = prev_output
 
-        return self.decoder(it, encoder_output=self.enc_out,  mask_encoder=self.mask_enc_cap, pos = self.pos_grid_cap)
+        return self.decoder(it, self.enc_out, self.box_last, self.mask_enc, self.pos_grid)
 
 
     def forward_box_loss(self, output, target):

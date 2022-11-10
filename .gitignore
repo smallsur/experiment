@@ -2,3 +2,5 @@
 *.pyc
 #evalue file in box
 *.txt
+
+.idea/

@@ -95,7 +95,8 @@ class Encoder(nn.Module):
 
         self.att_layers = nn.ModuleList([ShiftLayer(h=h, d_model=d_model, d_k=d_k, k=k, 
                                                  scales=scales,dropout=dropout) for _ in range(N)])
-        
+        self.norm_layers=nn.ModuleList([nn.LayerNorm(d_model) for _ in range(N)])
+        self.dropout_layers = nn.ModuleList([nn.Dropout(dropout) for _ in range(N)])
         self.N = N
         self.padding_idx = padding_idx
         self.feat_height = feat_height
@@ -108,31 +109,32 @@ class Encoder(nn.Module):
         bs = input.shape[0]
         
         ref_point = generate_ref_points(self.feat_width,self.feat_height)
-        
-        out = input
+        ref_points = [ref_point,]
+        for j in range(len(ref_points)):
+            ref_points[j] = ref_points[j].type_as(input)
+            ref_points[j] = ref_points[j].unsqueeze(0).repeat(bs, 1, 1, 1)
+
+        mask_ = attention_mask.squeeze(1).squeeze(1).view(bs, self.feat_height, self.feat_width)
+        src_masks = [mask_, ]
 
         for i in range(self.N):
+            out = input
             offset_query = self.offset_layers[i](out, box_output, box_output,  attention_mask=None, attention_weights = attention_weights, pos_emb=pos_emb, pos_enc=pos)
 
-            src = input.view(bs, self.feat_height, self.feat_width, -1)
+            src = out.view(bs, self.feat_height, self.feat_width, -1)
             query_ = offset_query.view(bs, self.feat_height, self.feat_width, -1)
-            mask_ = attention_mask.squeeze(1).squeeze(1).view(bs, self.feat_height, self.feat_width)
             pos_ = pos.view(bs, self.feat_height, self.feat_width, -1)
-            ref_points = [ref_point,]
-
-            for j in range(len(ref_points)):
-                ref_points[j] = ref_points[j].type_as(input)
-                ref_points[j] = ref_points[j].unsqueeze(0).repeat(bs, 1, 1, 1)
 
             src_tensors = [src, ]
-            src_masks = [mask_, ]
             poses = [pos_, ]
             src_querys = [query_, ]
             
             out = self.att_layers[i](src_tensors, ref_points, src_masks=None, src_key_padding_masks=src_masks, poses=poses, src_querys=src_querys)
             out = out.view(bs, self.feat_height * self.feat_width, -1)
+            input = input + self.dropout_layers[i](out)
+            input = self.norm_layers[i](input)
 
-        return out
+        return input
 
 class DecoderLayer(Module):
     def __init__(self, d_model=512, d_k=64, d_v=64, h=8, d_ff=2048, dropout=.1 , incor = 'concat'):
@@ -154,7 +156,7 @@ class DecoderLayer(Module):
         self.pwff = PositionWiseFeedForward(d_model, d_ff, dropout)
         self.cross_ = incor
 
-    def forward(self, input, enc_output, box_lastlayer, mask_pad, mask_self_att, mask_enc_att):
+    def forward(self, input, enc_output, box_lastlayer, mask_pad, mask_self_att, mask_enc_att, pos_grid=None):
 
         self_att = self.self_att(input, input, input, mask_self_att)
         self_att = self.lnorm1(input + self.dropout1(self_att))
@@ -162,14 +164,17 @@ class DecoderLayer(Module):
 
 
         cross_ = enc_output
+
         if self.cross_ == 'concat':
             cross_ = torch.concat([enc_output,box_lastlayer],dim=-2)
             box_mask = (torch.sum(box_lastlayer, -1) == 0).unsqueeze(1).unsqueeze(1)
-
             mask_enc_att = torch.concat([mask_enc_att, box_mask],dim = -1)
 
+        key = cross_
+        if pos_grid is not None:
+            key = key + pos_grid
 
-        enc_att = self.enc_att(self_att, cross_, cross_,mask_enc_att)
+        enc_att = self.enc_att(self_att, key, cross_, mask_enc_att)
         enc_att = self.lnorm2(self_att + self.dropout2(enc_att))
         enc_att = enc_att * mask_pad
 
@@ -195,7 +200,7 @@ class Decoder(Module):
         self.register_state('running_mask_self_attention', torch.zeros((1, 1, 0)).byte())
         self.register_state('running_seq', torch.zeros((1,)).long())
 
-    def forward(self, input, encoder_output, box_lastlayer, mask_encoder):
+    def forward(self, input, encoder_output, box_lastlayer, mask_encoder, pos_grid):
 
         b_s, seq_len = input.shape[:2]
         mask_queries = (input != self.padding_idx).unsqueeze(-1).float()  # (b_s, seq_len, 1)
@@ -220,7 +225,7 @@ class Decoder(Module):
         out = self.word_emb(input) + self.pos_emb(seq)
 
         for i, l in enumerate(self.layers):
-            out = l(out, encoder_output, box_lastlayer, mask_queries, mask_self_attention, mask_encoder)
+            out = l(out, encoder_output, box_lastlayer, mask_queries, mask_self_attention, mask_encoder, pos_grid=pos_grid)
 
         out = self.fc(out)
         return F.log_softmax(out, dim=-1)

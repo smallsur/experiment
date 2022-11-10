@@ -34,7 +34,6 @@ class ShiftHeadAttention(nn.Module):
         self.A_proj = nn.Linear(d_model, self.A_dims)
 
         self.wm_proj = nn.Linear(d_model, d_model)
-        # self.need_attn = need_attn
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -66,14 +65,7 @@ class ShiftHeadAttention(nn.Module):
                 query_mask: torch.Tensor = None,
                 key_masks: Optional[torch.Tensor] = None,
                 src_query = None):
-        """
-        :param key_masks:
-        :param query_mask:
-        :param query: B, H, W, C
-        :param keys: List[B, H, W, C]
-        :param ref_point: B, H, W, 2
-        :return:
-        """
+
         if key_masks is None:
             key_masks = [None] * len(keys)
 
