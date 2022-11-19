@@ -42,6 +42,11 @@ class ShiftHeadAttention(nn.Module):
 
         torch.nn.init.constant_(self.A_proj.bias, 1 / (self.scales * self.k))
 
+        torch.nn.init.xavier_uniform(self.q_proj.weight)
+        torch.nn.init.xavier_uniform(self.b_proj.weight)
+        torch.nn.init.xavier_uniform(self.k_proj.weight)
+        torch.nn.init.xavier_uniform(self.wm_proj.weight)
+        
         def init_xy(bias, x, y):
             torch.nn.init.constant_(bias[:, 0], float(x))
             torch.nn.init.constant_(bias[:, 1], float(y))

@@ -33,6 +33,7 @@ torch.manual_seed(1234)
 np.random.seed(1234)
 
 warnings.filterwarnings("ignore")
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 import sys
 
@@ -65,7 +66,6 @@ def evaluate_loss(model, dataloader, loss_fn, text_field):
                 pbar.set_postfix(loss=running_loss / (it + 1))
                 pbar.update()
     mAP = 0
-
     val_loss = running_loss / len(dataloader)
     return val_loss,mAP
 
