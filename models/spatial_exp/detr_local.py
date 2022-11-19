@@ -153,10 +153,10 @@ class Detr_Transformer(nn.Module):
 
         # self.pos_enc = build_position_encoding(512, 'sine')
 
-        self._reset_parameters()
+        self.init_weights()
 
 
-    def _reset_parameters(self):
+    def init_weights(self):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)

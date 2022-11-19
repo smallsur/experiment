@@ -45,6 +45,13 @@ class ShiftLayer(nn.Module):
         self.pwff = PositionWiseFeedForward(d_model, d_ff, dropout, identity_map_reordering=identity_map_reordering)
         self.dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(d_model)
+        self.init_weights()
+
+
+    def init_weights(self):
+        for n, p in self.named_parameters():
+            if 'mhatt' not in n and p.dim() > 1:
+                nn.init.xavier_uniform_(p)
 
     def with_pos_embed(self, tensor, pos):
         return tensor if pos is None else tensor + pos
@@ -103,6 +110,13 @@ class Encoder(nn.Module):
         self.feat_width = feat_width
         self.k = k
         self.scales = scales
+        self.init_weights()
+
+
+    def init_weights(self):
+        for n, p in self.named_parameters():
+            if 'att_layers' not in n and p.dim() > 1:
+                nn.init.xavier_uniform_(p)
 
         
     def forward(self, input, attention_mask=None, pos=None, attention_weights=None, box_output=None, pos_emb = None):
@@ -150,8 +164,6 @@ class DecoderLayer(Module):
         self.dropout2 = nn.Dropout(dropout)
         self.lnorm2 = nn.LayerNorm(d_model)
 
-        # self.dropout3 = nn.Dropout(dropout)
-        # self.lnorm3 = nn.LayerNorm(d_model)
 
         self.pwff = PositionWiseFeedForward(d_model, d_ff, dropout)
         self.cross_ = incor
@@ -200,6 +212,14 @@ class Decoder(Module):
         self.register_state('running_mask_self_attention', torch.zeros((1, 1, 0)).byte())
         self.register_state('running_seq', torch.zeros((1,)).long())
 
+        self.init_weights()
+
+
+    def init_weights(self):
+        for n, p in self.named_parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
     def forward(self, input, encoder_output, box_lastlayer, mask_encoder, pos_grid):
 
         b_s, seq_len = input.shape[:2]
@@ -225,7 +245,7 @@ class Decoder(Module):
         out = self.word_emb(input) + self.pos_emb(seq)
 
         for i, l in enumerate(self.layers):
-            out = l(out, encoder_output, box_lastlayer, mask_queries, mask_self_attention, mask_encoder, pos_grid=pos_grid)
+            out = l(out, encoder_output, box_lastlayer, mask_queries, mask_self_attention, mask_encoder, pos_grid=None)
 
         out = self.fc(out)
         return F.log_softmax(out, dim=-1)

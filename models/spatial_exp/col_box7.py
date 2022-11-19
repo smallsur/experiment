@@ -43,6 +43,13 @@ class ProjectLayer(nn.Module):
         self.pos_enc = build_position_encoding(512, 'sine')
 
         self.d_model =d_model
+        self.init_weights()
+
+
+    def init_weights(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
     
     def forward(self, features, shape):
         bs = features.shape[0]
@@ -69,21 +76,12 @@ class Transformer(CaptioningModel):
         self.encoder = encoder
         self.decoder = decoder
 
-        self.sequential_input = self.box_backbone.sequential_input
-
         self.project = project
 
         self.register_state('enc_out', None)
         self.register_state('pos_grid', None)
         self.register_state('mask_enc', None)
         self.register_state('box_last', None)
-        self.init_weights()
-
-
-    def init_weights(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
 
     @property
     def d_model(self):
